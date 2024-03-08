@@ -8,6 +8,8 @@ datastates_llm_t::datastates_llm_t(size_t host_cache_size, int gpu_id, int rank)
         checkCuda(cudaStreamCreateWithFlags(&_cpy_stream, cudaStreamNonBlocking));
         _thread_d2h = std::thread([&] { _d2h_trf(); });
         _thread_h2f = std::thread([&] { _h2f_trf(); });
+        _thread_d2h.detach();
+        _thread_h2f.detach();
         mem = new host_cache_t(host_cache_size, _gpu_id, _rank);
         _pending_d2h.clear();
         _pending_h2f.clear();
@@ -193,9 +195,10 @@ void datastates_llm_t::shutdown() {
         DBG("[" << _rank << "]" << "VELOC shutdown-mem done");
         _cv_h2f.notify_all();
         _cv_d2h.notify_all();
-        _thread_d2h.join();
-        DBG("[" << _rank << "]" << "VELOC shutdown-d2h thread done");
-        _thread_h2f.join();
+        // DBG("[" << _rank << "]" << "VELOC joining d2h thread");
+        // _thread_d2h.join();
+        // DBG("[" << _rank << "]" << "VELOC shutdown-d2h thread done");
+        // _thread_h2f.join();
         DBG("[" << _rank << "]" << "VELOC shutdown-h2f thread done");
         return;
     } catch (std::exception &e) {

@@ -1,6 +1,7 @@
-./build/
-./*.egg-info
-./__pycache__
+build/
+*.egg-info
+__pycache__
+.pycache_cache
 */build/
 */*.egg-info
 */__pycache__
