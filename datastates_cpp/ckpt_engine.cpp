@@ -31,10 +31,8 @@ void datastates_llm_t::_d2h_trf() {
                 _pending_d2h.clear();
                 _lock_d2h.unlock();
                 _cv_d2h.notify_all();
-                DBG("---- Returning from d2h thread " << _rank);
                 return;
             }
-            TIMER_START(d2h_time);
             auto e = _pending_d2h.front();
             _lock_d2h.unlock();
             _cv_d2h.notify_all();
@@ -62,8 +60,6 @@ void datastates_llm_t::_d2h_trf() {
             _pending_d2h.pop_front();
             _lock_d2h.unlock();
             _cv_d2h.notify_all();
-            // TIMER_STOP(d2h_time, "[D2H][" << _rank << "] Total time for GPU to process " << m->uid << " version " << version, size);
-            // DBG("[D2H][" << _rank << "] transfer of tensor " << uid  << " version " << version);
         } catch (std::exception &e) {
             FATAL("Exception caught in d2h trf." << e.what());
         } catch (...) {
@@ -78,13 +74,11 @@ void datastates_llm_t::_h2f_trf() {
     while (is_active) {
         try {
             std::unique_lock<std::mutex> _lock_h2f(_mutex_h2f);
-            TIMER_START(h2f_wait);
             while(_pending_h2f.empty() && is_active)
                 _cv_h2f.wait(_lock_h2f);
             if (!is_active) {
                 _lock_h2f.unlock();
                 _cv_h2f.notify_all();
-                DBG("---- Returning from h2f thread " << _rank);
                 return;
             }
             TIMER_START(h2f_time);
@@ -114,7 +108,6 @@ void datastates_llm_t::_h2f_trf() {
             _lock_h2f.unlock();
             _cv_h2f.notify_all();
             TIMER_STOP(h2f_time, "[H2F][" << _rank << "] Total time in h2f to save tensor " << uid << " version " << version << " of size " << size, size);
-            DBG("[H2F][" << _rank << "] flushed for tensor uid " << uid  << " version " << version);
         }  catch (std::exception &e) {
             FATAL("Exception caught in h2f trf." << e.what());
         } catch (...) {
@@ -129,14 +122,12 @@ void datastates_llm_t::ckpt_tensor(int version, const torch::Tensor &t, const st
         
         if (t.device().is_cuda()) {
             assert((t.device().is_cuda() && t.device().index() == _gpu_id) && "Tensor not on the same GPU as ckpt engine");
-            DBG("[" << _rank << "] Enqueuing GPU tensor " << uid << " version  " << version << " size " << size << " at file offset " << file_offset);
             std::unique_lock<std::mutex> _lock_d2h(_mutex_d2h);
             _pending_d2h.push_back(std::make_tuple(version, uid, t, size, file_offset, path));
             _lock_d2h.unlock();
             _cv_d2h.notify_all();
             return;
         } 
-        DBG("[" << _rank << "] Enqueuing host tensor " << uid << " version  " << version << " size " << size);
         std::unique_lock<std::mutex> _lock_h2f(_mutex_h2f);
         _pending_h2f.push_back(std::make_tuple(version, uid, static_cast<char *>(t.data_ptr()), size, file_offset, path));
         _lock_h2f.unlock();
@@ -154,16 +145,10 @@ void datastates_llm_t::wait() {
         TIMER_START(wait_timer);
         std::unique_lock<std::mutex> _lock_d2h(_mutex_d2h);
         while(!(_pending_d2h.empty())) {
-            DBG("[" << _rank << "] Waiting in d2h for " << _pending_d2h.size());
-            for(auto e: _pending_d2h) {
-                DBG("[" << _rank << "] D2H_WAIT " << std::get<0>(e) << " UID " << std::get<1>(e) << " size " << std::get<4>(e));
-            }
             _cv_d2h.wait(_lock_d2h);
         }
-        DBG("[" << _rank << "] Waiting complete in d2h now size " << _pending_d2h.size());
         _lock_d2h.unlock();
         _cv_d2h.notify_all();
-        
         TIMER_STOP(wait_timer, "[" << _rank << "] Wait D2H complete ", 1);
     }  catch (std::exception &e) {
         FATAL("Exception caught in wait D2H." << e.what());
@@ -174,9 +159,7 @@ void datastates_llm_t::wait() {
 
 void datastates_llm_t::shutdown() {
     try {
-        DBG("[" << _rank << "]" << "VELOC shutdown starting");
         wait();
-        DBG("[" << _rank << "]" << "VELOC shutdown-wait done");
         std::unique_lock<std::mutex> _lock_h2f(_mutex_h2f);
         // Wait for D2H transfers
         while((!_pending_h2f.empty())) {
@@ -190,16 +173,9 @@ void datastates_llm_t::shutdown() {
         _cv_h2f.notify_all();
         
         is_active = false;
-        DBG("[" << _rank << "]" << "VELOC shutdown-file-write done");
-        mem->shutdown();
-        DBG("[" << _rank << "]" << "VELOC shutdown-mem done");
+        delete mem;
         _cv_h2f.notify_all();
         _cv_d2h.notify_all();
-        // DBG("[" << _rank << "]" << "VELOC joining d2h thread");
-        // _thread_d2h.join();
-        // DBG("[" << _rank << "]" << "VELOC shutdown-d2h thread done");
-        // _thread_h2f.join();
-        DBG("[" << _rank << "]" << "VELOC shutdown-h2f thread done");
         return;
     } catch (std::exception &e) {
         FATAL("Exception caught in shutdown." << e.what());

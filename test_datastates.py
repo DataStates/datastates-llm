@@ -40,6 +40,7 @@ def test_datastates():
     recovered_tensor_sum = torch.sum(recovered_obj["tensor1"])
     print(f"Ckpt tensor sum: {tensor_sum}, Recovered tensor sum: {recovered_tensor_sum}")
     # print(recovered_obj)
+    del ckpt_engine
     
 if __name__ == "__main__":
     test_datastates()

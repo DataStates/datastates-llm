@@ -52,15 +52,11 @@ static auto beginning = std::chrono::steady_clock::now();
     std::abort(); \
 }
 
-#define MIN_CHUNK_SIZE (256<<20)
-#define MALLOC_THREADS (8)
-#define HUGEPAGES_SIZE (2*1024*1024)
-#define CACHE_LINE_SIZE (64)
 struct mem_region_t {
-    uint64_t uid;
-    char *ptr;
-    size_t start_offset;
-    size_t end_offset;
+    uint64_t    uid;
+    char        *ptr;
+    size_t      start_offset;
+    size_t      end_offset;
     mem_region_t(uint64_t u, char *p, size_t s, size_t e): uid(u), ptr(p), start_offset(s), end_offset(e) {};
 };
 
@@ -78,13 +74,13 @@ class host_cache_t {
     size_t max_allocated = 0;
     bool is_active = true;
     int _rank = -1;
+    void _print_trace();
+    mem_region_t* _assign(const uint64_t uid, size_t h, size_t s);
 public:
     host_cache_t(size_t t, int d, int rank);
-    ~host_cache_t();
-    mem_region_t* _assign(const uint64_t uid, size_t h, size_t s);
+    ~host_cache_t();    
     mem_region_t* allocate(const uint64_t uid, size_t s);
     void deallocate(uint64_t _uid, size_t s);
-    void _print_trace();
     void shutdown();
 };
 

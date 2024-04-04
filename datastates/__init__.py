@@ -45,6 +45,8 @@ class DataStates:
             try:
                 version = int(path.split("/")[-2].replace('global_step', ''))
             except Exception as exc:
+                # If not running with deepspeed (which has directory path of format `global_step{version}/filename.pt`)
+                # use a static version number.
                 version = 0
 
             header = {}
@@ -116,11 +118,8 @@ class DataStates:
 
     def save(self, state_dict, path: str):
         try:
-            # start_time = time.time()
-            self.logger.info(f"Saving {path}")
+            # self.logger.info(f"Saving {path}")
             self.executor.submit(self.save_background, state_dict, path)
-            # self.save_background(state_dict, path)
-            # self.logger.info(f"[DataStates] Saved {path}. in time {time.time()-start_time}")
             return True
         except Exception as exc:
             self.logger.info(f"[DataStates][ERROR] Could not save {path}, exception: {exc}, data: {state_dict}")
@@ -169,11 +168,6 @@ class DataStates:
                     tensor_restored = torch.zeros(size=tuple(shape), dtype=getattr(torch, dtype))
                     ctypes.memmove(tensor_restored.data_ptr(), bytes(byte_data), tensor_size)
                     pre_dest[sub_k] = tensor_restored
-                    # dbg_path = os.path.dirname(path)
-                    # tensor_torch_restored = torch.load(f"{dbg_path}/dbg-{k}.pt")
-                    # new_dbg_torch_tensor_sum = float(torch.sum(tensor_torch_restored))
-                    # new_dbg_tensor_sum = float(torch.sum(pre_dest[sub_k]))
-                    # assert (dbg_tensor_sum == new_dbg_tensor_sum), f"Expected {dbg_tensor_sum}, got : {new_dbg_tensor_sum}" 
             except Exception as exc:
                 self.logger.error(f"Got error with tensor loading {dtype}, {shape}, {exc}")
                 raise Exception(f"Got error with tensor loading {dtype}, {shape}, {exc}")

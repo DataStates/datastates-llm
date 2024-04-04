@@ -18,22 +18,8 @@ host_cache_t::~host_cache_t() {
         is_active = false;
         _mem_cv.notify_all();
         checkCuda(cudaFreeHost(_start_ptr));
+        _mem_q.clear();
         return;
-    } catch (std::exception &e) {
-        FATAL("Exception caught in memory cache destructor." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in memory cache destructor.");
-    }
-}
-
-void host_cache_t::shutdown() {
-    try {
-        std::unique_lock<std::mutex> _mem_lock(_mem_mutex);
-        is_active = false;
-        _mem_lock.unlock();
-        _mem_cv.notify_all();
-        DBG("[" << _rank << "]" << "Memory cache shutdown starting");
-        DBG("[" << _rank << "]" <<"Memory cache shutdown complete");
     } catch (std::exception &e) {
         FATAL("Exception caught in memory cache destructor." << e.what());
     } catch (...) {
@@ -43,11 +29,8 @@ void host_cache_t::shutdown() {
 
 mem_region_t* host_cache_t::_assign(const uint64_t uid, size_t h, size_t s) {
     try {
-        if (h+s > _total_memory) {
-            std::runtime_error("Exception in assign exceeding total memory size");
-            // _print_trace();
-            std::abort();
-        }
+        if (h+s > _total_memory) 
+            FATAL("Exception in assign: exceeding total memory size");
         char *ptr = _start_ptr + h;
         mem_region_t *m = new mem_region_t(uid, ptr, h, h+s);
         _head = h + s;
@@ -55,7 +38,6 @@ mem_region_t* host_cache_t::_assign(const uint64_t uid, size_t h, size_t s) {
             _head = 0;
         _curr_size += s;
         _mem_q.push_back(m);
-        // _print_trace();
         DBG("[" << _rank << "]" << "Assigned " << uid << " head " << h << " of size " << s << " curr size " << _curr_size << " cur head " << _head  << " cur tail " << _tail);
         return m;
     } catch (std::exception &e) {
@@ -67,7 +49,6 @@ mem_region_t* host_cache_t::_assign(const uint64_t uid, size_t h, size_t s) {
 
 mem_region_t* host_cache_t::allocate(const uint64_t uid, size_t s) {
     try {
-        DBG("[" << _rank << "]" << "Attempting to allocate for " << uid << " of size " << s << " when current memory is " << _curr_size << " cur head " << _head  << " cur tail " << _tail);
         if (s > _total_memory) 
             FATAL("[" << _rank << "]" <<"Cannot allocate size " << s << " larger than the pool of " << _total_memory);
         mem_region_t* ptr = nullptr;
@@ -91,10 +72,7 @@ mem_region_t* host_cache_t::allocate(const uint64_t uid, size_t s) {
         if (ptr == nullptr) {
             // Now the tail is greater than head
             while(((_tail > _head) && (_tail - _head < s)) && is_active) {
-                DBG("[" << _rank << "]" << "Waiting in second wait for " << uid << " _tail -head < s, head " << _head << " tail: " << _tail << " s " << s);
-                TIMER_START(wait_time);
                 _mem_cv.wait(_mem_lock);
-                TIMER_STOP(wait_time, "[" << _rank << "]" << "Waiting for more memory " << _tail - _head << " uid " << uid << " size " << s << " head " << _head << " tail " << _tail, 10);
             }
             // This may happen when deallocate resets the tail pointer to 0 when tail+dealloc_size > max_buffer_cap
             if (_tail <= _head) {
@@ -103,7 +81,6 @@ mem_region_t* host_cache_t::allocate(const uint64_t uid, size_t s) {
                 return allocate(uid, s);
             }
             if (!is_active) {
-                DBG("Returning from allocate function.....");
                 _mem_lock.unlock();
                 _mem_cv.notify_all();
                 return nullptr;
@@ -128,9 +105,8 @@ void host_cache_t::deallocate(uint64_t _uid, size_t s) {
             return;
         mem_region_t *m = _mem_q.front();
         if (_uid != m->uid || s != (m->end_offset-m->start_offset)) {
-            std::cout << "Should deallocate the tail first. Only FIFO eviction allowed" << std::endl;
-            std::cout << "Tried deleting " << _uid << " of size " << s <<  " at offset " << m->start_offset 
-                << " but front element was " << (void *)m->ptr << " of size " << m->end_offset-m->start_offset << std::endl;
+            FATAL("Should deallocate the tail first. Only FIFO eviction allowed");
+            FATAL("Tried deleting " << _uid << " but front element was " << m->uid);
             _print_trace();
             return;
         }
@@ -144,7 +120,6 @@ void host_cache_t::deallocate(uint64_t _uid, size_t s) {
         _mem_q.pop_front();
         _mem_lock.unlock();
         _mem_cv.notify_all();
-        DBG("[" << _rank << "]" <<"Deallocated from host " << _uid << " of size " << s << " cur size " << _curr_size << " cur head " << _head  << " cur tail " << _tail);
     } catch (std::exception &e) {
         FATAL("Exception caught in deallocate operation ." << e.what());
     } catch (...) {
@@ -157,7 +132,7 @@ void host_cache_t::_print_trace() {
         DBG("===================================================");
         for (size_t i = 0; i < _mem_q.size(); ++i) {
             const auto e = _mem_q[i];
-            DBG(e->uid << (void*)e->ptr << " : " << e->start_offset << " - " << e->end_offset);
+            DBG("UID: " << e->uid << " ptr: " << (void*)e->ptr << " start: " << e->start_offset << " end: " << e->end_offset);
         }
         auto e = _mem_q.front();
         DBG("First element " << e->uid << " ptr " << (void *)e->ptr << " at start offset " << e->start_offset);

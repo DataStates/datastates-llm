@@ -10,7 +10,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .. currentmodule:: datastates
         .. autosummary::
            :toctree: _generate
-           ckpt_obj
            ckpt_tensor
            wait
            shutdown

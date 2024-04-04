@@ -10,12 +10,7 @@
 #include <iostream>
 #include <exception>
 #include <pybind11/pybind11.h>
-// #include <torch/csrc/python_headers.h>
-// #include <torch/csrc/utils/pybind.h>
 #include <torch/torch.h>
-// #include <torch/extension.h>
-// #include <torch/script.h>
-// #include <pybind11/stl.h>
 #include <thread>
 #include <tuple>
 #include <iostream>
@@ -29,16 +24,18 @@ namespace py = pybind11;
 
 
 static volatile uint64_t local_uid = 1;
-class datastates_llm_t {    
+class datastates_llm_t {
+    // Store the <ckpt_version, local_uid, tensor reference, tensor size, file_start_offset, file_path>
     std::deque<std::tuple<int, uint64_t, const torch::Tensor, size_t, size_t, std::string>> _pending_d2h;
-    std::mutex _mutex_d2h;
+    std::mutex              _mutex_d2h;
     std::condition_variable _cv_d2h;
-    std::thread _thread_d2h;
+    std::thread             _thread_d2h;
 
+    // Store the <ckpt_version, local_uid, host_pointer, tensor size, file_start_offset, file_path>
     std::deque<std::tuple<int, uint64_t, char *, size_t, size_t, std::string>> _pending_h2f;
-    std::mutex _mutex_h2f;
+    std::mutex              _mutex_h2f;
     std::condition_variable _cv_h2f;
-    std::thread _thread_h2f;
+    std::thread             _thread_h2f;
 
     cudaStream_t _cpy_stream;    
     host_cache_t *mem;
