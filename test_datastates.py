@@ -15,7 +15,7 @@ def test_datastates():
         device = torch.device("cuda:0")
     
     tensor_shape = torch.Size([256, 256])
-    tensor_dtype = torch.bfloat16
+    tensor_dtype = torch.float32
     tensor = torch.randn(tensor_shape, dtype=tensor_dtype).to(device)
     # tensor.uniform_()
     model_name = "datastates_test_model"
