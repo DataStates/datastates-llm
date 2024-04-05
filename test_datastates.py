@@ -3,12 +3,26 @@ import datastates
 import numpy as np
 import time
 
+# We need to test the way deepspeed checkpointing config is setup
+# The DeepSpeed config, along with other params such as 
+# 'zero_optimization_stage', 'pipeline_parallel' 'tensor_parallel' etc.
+# From there, we need datastate_config, which has config
+# ['host_cache_size'] attribute.
+
+class DeepSpeedConfig:
+    def __init__(self):
+        self.datastates_config = self.DataStatesConfig()
+    
+    class DataStatesConfig:
+        def __init__(self):
+            self.config = {
+                "host_cache_size": 1
+            }
+
 def test_datastates():
-    config = {
-        "host_cache_size": 1
-    }
+    deepspeed_config = DeepSpeedConfig()
     print(f"Going to initalize datastates engine...")
-    ckpt_engine = datastates.DataStates(config_params=config, rank=0)
+    ckpt_engine = datastates.DataStates(deepspeed_config=deepspeed_config, rank=0)
     device = torch.device("cpu")    
     if torch.cuda.is_available():
         print(f"Found {torch.cuda.device_count()} CUDA devices")

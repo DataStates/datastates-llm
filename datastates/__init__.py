@@ -15,10 +15,11 @@ SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
 
 class DataStates:
-    def __init__(self, config_params, rank) -> None:
+    def __init__(self, deepspeed_config, rank) -> None:
         try:
             self.rank = rank
-            self.ckpt_engine = datastates_handle((config_params['host_cache_size'] << 30), 
+            datastates_config = deepspeed_config.datastates_config.config
+            self.ckpt_engine = datastates_handle((datastates_config['host_cache_size'] << 30), 
                                             int(torch.cuda.current_device()),
                                             int(self.rank)
                                         )
