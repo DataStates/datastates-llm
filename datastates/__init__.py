@@ -125,9 +125,7 @@ class DataStates:
             self.logger.info(f"[DataStates][ERROR] Could not save {path}, exception: {exc}, data: {state_dict}")
             sys.exit(-1)
             
-        
-
-    def load(self, path: str, map_location=None):
+    def load(self, path: str, num_restore_threads=16, map_location=None):
         # self.logger.info(f"[DataStates] Loading checkpoint from {path}...")
         # partition = torch.load(path, map_location=map_location)
         try:
@@ -164,14 +162,21 @@ class DataStates:
 
                     f.seek(start_offset)
                     tensor_size = end_offset-start_offset
-                    byte_data = f.read(tensor_size)
-                    tensor_restored = torch.zeros(size=tuple(shape), dtype=getattr(torch, dtype))
-                    ctypes.memmove(tensor_restored.data_ptr(), bytes(byte_data), tensor_size)
+                    tensor_restored = torch.empty(size=tuple(shape), dtype=getattr(torch, dtype))
+                    t = time.time()
+                    self.ckpt_engine.restore_tensor(tensor_restored, path, start_offset, end_offset, num_restore_threads)
+                    # self.logger.info(f"{sub_k} restored of size {tensor_restored.numel()*tensor_restored.element_size()} exactly in {time.time()-t} of sum {torch.sum(tensor_restored)}")
+                    
+                    # byte_data = f.read(tensor_size)
+                    # byte_size = f.readinto(tensor_restored)
+                    # assert byte_size == tensor_size, f"Read bytes {byte_size} while tensor size is {tensor_size}"
+                    # tensor_restored = torch.frombuffer(tensor_restored, size=tuple(shape), dtype=getattr(torch, dtype))
+                    # ctypes.memmove(tensor_restored.data_ptr(), bytes(byte_data), tensor_size)
                     pre_dest[sub_k] = tensor_restored
             except Exception as exc:
                 self.logger.error(f"Got error with tensor loading {dtype}, {shape}, {exc}")
                 raise Exception(f"Got error with tensor loading {dtype}, {shape}, {exc}")
-            self.logger.info(f"[DataStates] Loaded checkpoint from {path}.")
+            # self.logger.info(f"[DataStates] Loaded checkpoint from {path}.")
             return data
         except Exception as exc:
             self.logger.info(f"[DataStates][ERROR] Could not load {path}, exception: {exc}")

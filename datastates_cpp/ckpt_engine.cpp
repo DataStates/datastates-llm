@@ -140,6 +140,29 @@ void datastates_llm_t::ckpt_tensor(int version, const torch::Tensor &t, const st
     }
 }
 
+void datastates_llm_t::restore_tensor(const torch::Tensor &t, std::string path, const std::uint64_t start_offset, const std::uint64_t end_offset, int num_restore_threads) {
+    try {
+        size_t chunk_size = (end_offset - start_offset) / num_restore_threads;
+        #pragma omp parallel num_threads(num_restore_threads)
+        {
+            int thread_id = omp_get_thread_num();
+            long long offset = thread_id * chunk_size;
+            std::ifstream file(path, std::ios::binary);
+            if (!file.is_open()) {
+                std::cerr << "Error: Failed to open file." << thread_id << std::endl;
+            }
+            file.seekg(offset + start_offset, std::ios::beg);
+            file.read(static_cast<char *>(t.data_ptr()) + offset, chunk_size);
+            file.close();
+        }
+    } catch(std::exception& e) {
+        FATAL("Standard exception caught in datastates restore: " << e.what());
+    } catch (...) {
+        FATAL("Unknown exception caught in datastates restore.");
+    }
+}
+
+
 void datastates_llm_t::wait() {
     try {
         TIMER_START(wait_timer);

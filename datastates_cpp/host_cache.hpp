@@ -44,8 +44,8 @@ static auto beginning = std::chrono::steady_clock::now();
     std::cout << "[" \
         << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__ << "] " << message << std::endl
 
-// #define DBG(message) MESSAGE("DEBUG", message)
-#define DBG(m) {}
+#define DBG(message) MESSAGE("DEBUG", message)
+// #define DBG(m) {}
 
 #define FATAL(message) {\
     MESSAGE("FATAL", message);\

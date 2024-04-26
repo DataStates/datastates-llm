@@ -19,6 +19,7 @@
 #include <chrono>
 #include <unistd.h>
 #include "host_cache.hpp"
+#include "omp.h"
 
 namespace py = pybind11;
 
@@ -44,10 +45,12 @@ class datastates_llm_t {
     int _rank = -1;
     void _d2h_trf();
     void _h2f_trf();
+
     
     public:
     datastates_llm_t(size_t host_cache_size, int gpu_id, int rank=-1);
     void ckpt_tensor(int version, const torch::Tensor &t, const std::uint64_t size, const std::uint64_t file_offset, std::string path);
+    void restore_tensor(const torch::Tensor &t, std::string path, const std::uint64_t start_offset, const std::uint64_t end_offset, int num_restore_threads);
     void wait();
     void shutdown();
 };

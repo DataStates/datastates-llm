@@ -16,7 +16,7 @@ setup(
             name=name,
             sources=[f'{src_path_rel}/host_cache.cpp', f'{src_path_rel}/ckpt_engine.cpp', f'{src_path_rel}/py_datastates_llm.cpp'],
             include_dirs=[src_path],
-            extra_compile_args={'cxx': ['-g'], 'nvcc': ['-O2'] }
+            extra_compile_args={'cxx': ['-g', '-fopenmp'], 'nvcc': ['-O2'] }
         )        
     ],
     install_requires=["pybind11", "torch"],

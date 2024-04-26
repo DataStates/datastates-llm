@@ -3,7 +3,7 @@
 host_cache_t::host_cache_t(size_t t, int d, int r): _device_id(d), _total_memory(t), _curr_size(0), _head(0), _tail(0), _rank(r) {
     try {
         is_active = true;
-        checkCuda(cudaMallocHost(&_start_ptr, _total_memory))
+        checkCuda(cudaMallocHost(&_start_ptr, _total_memory));
         max_allocated = 0;
         DBG("Returned from the memory cache function");
     } catch (std::exception &e) {
