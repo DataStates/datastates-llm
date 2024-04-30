@@ -13,6 +13,15 @@ datastates_llm_t::datastates_llm_t(size_t host_cache_size, int gpu_id, int rank)
         mem = new host_cache_t(host_cache_size, _gpu_id, _rank);
         _pending_d2h.clear();
         _pending_h2f.clear();
+
+        DBG("Going to start alloc_thread GPU: " << _gpu_id);
+        _thread_alloc = std::thread([&] { _alloc_tensor(); });
+        DBG("Started alloc_thread GPU: " << _gpu_id);
+        for(int thread_id=0; thread_id < READ_THREADS; thread_id++) {
+            _thread_read[thread_id] = std::thread([&] { _read_file(thread_id); });
+            DBG("Started thread_read GPU: " << _gpu_id);
+        }
+
     } catch(std::exception& e) {
         FATAL("Standard exception caught in datastates init: " << e.what());
     } catch (...) {
@@ -140,25 +149,107 @@ void datastates_llm_t::ckpt_tensor(int version, const torch::Tensor &t, const st
     }
 }
 
-void datastates_llm_t::restore_tensor(const torch::Tensor &t, std::string path, const std::uint64_t start_offset, const std::uint64_t end_offset, int num_restore_threads) {
-    try {
-        size_t chunk_size = (end_offset - start_offset) / num_restore_threads;
-        #pragma omp parallel num_threads(num_restore_threads)
-        {
-            int thread_id = omp_get_thread_num();
-            long long offset = thread_id * chunk_size;
-            std::ifstream file(path, std::ios::binary);
-            if (!file.is_open()) {
-                std::cerr << "Error: Failed to open file." << thread_id << std::endl;
-            }
-            file.seekg(offset + start_offset, std::ios::beg);
-            file.read(static_cast<char *>(t.data_ptr()) + offset, chunk_size);
-            file.close();
+void datastates_llm_t::_alloc_tensor() {
+    while (is_active) {
+        std::unique_lock<std::mutex> _lock_alloc(_mutex_alloc);
+        while(_pending_alloc.empty() && is_active)
+            _cv_alloc.wait(_lock_alloc);
+        if (!is_active)
+            return;
+
+        const torch::Tensor *t= _pending_alloc.front();
+        void *ptr           = static_cast<void*>((*t).data_ptr());
+        size_t total_size   = (*t).element_size()*(*t).numel();
+        _pending_alloc.pop_front();
+        _lock_alloc.unlock();
+        _cv_alloc.notify_all();
+        
+        TIMER_START(alloc_time);
+        for (size_t i=0; i<total_size; i+=CHUNK_SIZE) {
+            size_t rem = std::min(CHUNK_SIZE, total_size-i);
+            memset((char *)ptr+i, 0, rem);
+            _alloc_map[ptr] += rem;
+            _cv_alloc.notify_all();
         }
-    } catch(std::exception& e) {
-        FATAL("Standard exception caught in datastates restore: " << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in datastates restore.");
+        TIMER_STOP(alloc_time, "Time to alloc is ", total_size)
+    }
+}
+
+
+void datastates_llm_t::alloc_tensor_queue(const torch::Tensor &t) {
+    std::unique_lock<std::mutex> _lock_alloc(_mutex_alloc);
+    _pending_alloc.push_back(&t);
+    _alloc_map[static_cast<void*>(t.data_ptr())] = 0;
+    _lock_alloc.unlock();
+    _cv_alloc.notify_all();
+}
+
+
+void datastates_llm_t::_read_file(int thread_id) {
+    while (is_active) {
+        std::unique_lock<std::mutex> _lock_read(_mutex_read[thread_id]);
+        while(_pending_read[thread_id].empty() && is_active)
+            _cv_read[thread_id].wait(_lock_read);
+        if (!is_active)
+            return;
+        
+        auto e              = _pending_read[thread_id].front();
+        void * tensor_ptr   = std::get<0>(e);
+        size_t f_start_offset = std::get<1>(e);
+        size_t f_end_offset = std::get<2>(e);
+        int fd              = std::get<3>(e);
+        size_t tensor_size = f_end_offset-f_start_offset;
+        DBG("Starting to read file " << thread_id);
+
+        size_t my_start_offset = thread_id*CHUNK_SIZE;
+        size_t my_end_offset = my_start_offset+CHUNK_SIZE;
+        std::unique_lock<std::mutex> _lock_alloc(_mutex_alloc, std::defer_lock);
+
+        while (my_start_offset < tensor_size) {
+            my_end_offset = std::min(my_start_offset+CHUNK_SIZE, tensor_size);
+            if (my_end_offset < _alloc_map[tensor_ptr]) {
+                _lock_alloc.lock();
+                while (my_end_offset < _alloc_map[tensor_ptr])
+                    _cv_alloc.wait(_lock_alloc);
+                _lock_alloc.unlock();
+                _cv_alloc.notify_all();
+            }
+
+            size_t bytesRead = pread(fd, tensor_ptr+my_start_offset, my_end_offset-my_start_offset, f_start_offset+my_start_offset);
+            DBG("Read file in progress " << thread_id << " read " << bytesRead << " from offset " << my_start_offset);
+            if (bytesRead != my_end_offset-my_start_offset) {
+                std::cerr << "Error reading from file. Read " << bytesRead << " intead of " << my_end_offset-my_start_offset << std::endl;
+                return;
+            }
+            my_start_offset += READ_THREADS*CHUNK_SIZE;
+        }
+
+        _pending_read[thread_id].pop_front();
+        _lock_read.unlock();
+        _cv_read[thread_id].notify_all();
+    }
+}
+
+void datastates_llm_t::restore_tensor(const torch::Tensor &t, std::string path, const std::uint64_t f_start_offset, const std::uint64_t f_end_offset) {
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd == -1) {
+        std::cerr << "Failed to open file." << std::endl;
+        return;
+    }
+    // Launch the read operations
+    for (int thread_id=0; thread_id<READ_THREADS; thread_id++) {
+        std::unique_lock<std::mutex> _lock_read(_mutex_read[thread_id]);
+        _pending_read[thread_id].push_back(std::tuple(static_cast<void*>(t.data_ptr()), f_start_offset, f_end_offset, fd));
+        _lock_read.unlock();
+        _cv_read[thread_id].notify_all();
+    }
+
+    // Wait for all read operations to complete
+    for (int thread_id=0; thread_id<READ_THREADS; thread_id++) {
+        std::unique_lock<std::mutex> _lock_read(_mutex_read[thread_id]);
+        while (!_pending_read[thread_id].empty())
+            _cv_read[thread_id].wait(_lock_read);
+        _lock_read.unlock();
     }
 }
 
@@ -199,6 +290,12 @@ void datastates_llm_t::shutdown() {
         delete mem;
         _cv_h2f.notify_all();
         _cv_d2h.notify_all();
+        _cv_alloc.notify_all();
+        _thread_alloc.join();
+        for(int thread_id=0; thread_id<READ_THREADS; thread_id++) {
+            _cv_read[thread_id].notify_all();
+            _thread_read[thread_id].join();
+        }
         return;
     } catch (std::exception &e) {
         FATAL("Exception caught in shutdown." << e.what());

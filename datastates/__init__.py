@@ -17,15 +17,6 @@ KEY_SEPARATOR = "|"
 class DataStates:
     def __init__(self, config_params, rank) -> None:
         try:
-            self.rank = rank
-            self.ckpt_engine = datastates_handle((config_params['host_cache_size'] << 30), 
-                                            int(torch.cuda.current_device()),
-                                            int(self.rank)
-                                        )
-            self.futures = None
-            concurrent_parser_threads = 4
-            self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
-
             logging_level = logging.INFO
             formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] [%(filename)s:%(lineno)d:%(funcName)s] %(message)s")
             channel = logging.StreamHandler(stream=sys.stdout)
@@ -34,6 +25,20 @@ class DataStates:
             self.logger = logging.getLogger("DataStates")
             self.logger.setLevel(logging_level)
             self.logger.addHandler(channel)
+            self.rank = rank
+            self.logger.info(f"Initing datastates on rank {self.rank}")
+
+            self.ckpt_engine = datastates_handle((config_params['host_cache_size'] << 30), 
+                                            int(torch.cuda.current_device()),
+                                            int(self.rank)
+                                        )
+            self.futures = None
+            concurrent_parser_threads = 4
+            self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
+            self.logger.info(f"Inited datastates on rank {self.rank}")
+            time.sleep(15)
+            
+
         except Exception as exc:
             print(f"[DataStates][ERROR] Got exception during DataStates init {exc}")
             sys.exit(-1)
@@ -124,10 +129,14 @@ class DataStates:
         except Exception as exc:
             self.logger.info(f"[DataStates][ERROR] Could not save {path}, exception: {exc}, data: {state_dict}")
             sys.exit(-1)
-            
-    def load(self, path: str, num_restore_threads=16, map_location=None):
+
+    def load(self, path: str, map_location=None, num_restore_threads=8):
         # self.logger.info(f"[DataStates] Loading checkpoint from {path}...")
         # partition = torch.load(path, map_location=map_location)
+        out_time = time.time()
+        out_for_time = time.time()
+        total_size = 0
+        inner_time = 0
         try:
             f = open(path, 'rb')
             f.seek(0)
@@ -140,6 +149,8 @@ class DataStates:
             f.seek(start_offset)
             data = pickle.loads(f.read(end_offset-start_offset))
             try:
+                out_for_time = time.time()
+                tensors_restored = []
                 for k, v in header.items():
                     split_k = deque(k.split(KEY_SEPARATOR))
                     dtype = v["dtype"]
@@ -160,23 +171,19 @@ class DataStates:
                     if dest != str("TENSOR."+k):
                         raise Exception(f"The key in header {k} does not match key at location {dest}")
 
-                    f.seek(start_offset)
-                    tensor_size = end_offset-start_offset
-                    tensor_restored = torch.empty(size=tuple(shape), dtype=getattr(torch, dtype))
-                    t = time.time()
-                    self.ckpt_engine.restore_tensor(tensor_restored, path, start_offset, end_offset, num_restore_threads)
-                    # self.logger.info(f"{sub_k} restored of size {tensor_restored.numel()*tensor_restored.element_size()} exactly in {time.time()-t} of sum {torch.sum(tensor_restored)}")
+                    t = torch.empty(size=tuple(shape), dtype=getattr(torch, dtype))
+                    self.ckpt_engine.alloc_tensor_queue(t)
+                    tensors_restored.append((t, path, start_offset, end_offset))
+                    pre_dest[sub_k] = t
+                
+                ### Now that the empty tensors are being allocated in the background, start reading into them one by one
+                for (t, path, start_offset, end_offset) in tensors_restored:
+                    self.ckpt_engine.restore_tensor(t, path, start_offset, end_offset)
                     
-                    # byte_data = f.read(tensor_size)
-                    # byte_size = f.readinto(tensor_restored)
-                    # assert byte_size == tensor_size, f"Read bytes {byte_size} while tensor size is {tensor_size}"
-                    # tensor_restored = torch.frombuffer(tensor_restored, size=tuple(shape), dtype=getattr(torch, dtype))
-                    # ctypes.memmove(tensor_restored.data_ptr(), bytes(byte_data), tensor_size)
-                    pre_dest[sub_k] = tensor_restored
             except Exception as exc:
                 self.logger.error(f"Got error with tensor loading {dtype}, {shape}, {exc}")
                 raise Exception(f"Got error with tensor loading {dtype}, {shape}, {exc}")
-            # self.logger.info(f"[DataStates] Loaded checkpoint from {path}.")
+            self.logger.info(f"[DataStates] Loaded checkpoint from {path} out_time {time.time()-out_time}, out_for_time: {time.time()-out_for_time} inner_time {inner_time}, total_size {total_size}.")
             return data
         except Exception as exc:
             self.logger.info(f"[DataStates][ERROR] Could not load {path}, exception: {exc}")
@@ -203,4 +210,5 @@ class DataStates:
         return self.ckpt_engine.shutdown()
 
     def __del__(self):
-        self.shutdown()
+        # self.shutdown()
+        pass

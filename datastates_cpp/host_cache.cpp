@@ -5,7 +5,7 @@ host_cache_t::host_cache_t(size_t t, int d, int r): _device_id(d), _total_memory
         is_active = true;
         checkCuda(cudaMallocHost(&_start_ptr, _total_memory));
         max_allocated = 0;
-        DBG("Returned from the memory cache function");
+        DBG("Returned from the memory cache function of " << _device_id);
     } catch (std::exception &e) {
         FATAL("Exception caught in memory cache constructor." << e.what());
     } catch (...) {
@@ -15,9 +15,12 @@ host_cache_t::host_cache_t(size_t t, int d, int r): _device_id(d), _total_memory
 
 host_cache_t::~host_cache_t() {
     try {
+        if (max_allocated == 0)
+            return;
         is_active = false;
         _mem_cv.notify_all();
         checkCuda(cudaFreeHost(_start_ptr));
+        max_allocated = 0;
         _mem_q.clear();
         return;
     } catch (std::exception &e) {
