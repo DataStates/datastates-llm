@@ -171,10 +171,11 @@ class DataStates:
                     self.ckpt_engine.alloc_tensor_queue(t)
                     tensors_restored.append((t, path, start_offset, end_offset))
                     pre_dest[sub_k] = t
-                
+                self.logger.info(f"Allocation enqueing time: {time.time()-out_for_time}")
                 ### Now that the empty tensors are being allocated in the background, start reading into them one by one
                 for (t, path, start_offset, end_offset) in tensors_restored:
                     self.ckpt_engine.restore_tensor(t, path, start_offset, end_offset)
+                self.logger.info(f"Allocation enqueing+restore time: {time.time()-out_for_time}")
                     
             except Exception as exc:
                 self.logger.error(f"Got error with tensor loading {dtype}, {shape}, {exc}")
