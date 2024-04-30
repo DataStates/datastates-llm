@@ -16,9 +16,11 @@ datastates_llm_t::datastates_llm_t(size_t host_cache_size, int gpu_id, int rank)
 
         DBG("Going to start alloc_thread GPU: " << _gpu_id);
         _thread_alloc = std::thread([&] { _alloc_tensor(); });
+        _thread_alloc.detach();
         DBG("Started alloc_thread GPU: " << _gpu_id);
         for(int thread_id=0; thread_id < READ_THREADS; thread_id++) {
-            _thread_read[thread_id] = std::thread([&] { _read_file(thread_id); });
+            _thread_read[thread_id] = std::thread([&, thread_id] { _read_file(thread_id); });
+            _thread_read[thread_id].detach();
             DBG("Started thread_read GPU: " << _gpu_id);
         }
 
@@ -156,10 +158,10 @@ void datastates_llm_t::_alloc_tensor() {
             _cv_alloc.wait(_lock_alloc);
         if (!is_active)
             return;
-
-        const torch::Tensor *t= _pending_alloc.front();
-        void *ptr           = static_cast<void*>((*t).data_ptr());
-        size_t total_size   = (*t).element_size()*(*t).numel();
+        
+        auto e          = _pending_alloc.front();
+        void *ptr       = std::get<0>(e);
+        size_t total_size = std::get<1>(e);
         _pending_alloc.pop_front();
         _lock_alloc.unlock();
         _cv_alloc.notify_all();
@@ -178,51 +180,55 @@ void datastates_llm_t::_alloc_tensor() {
 
 void datastates_llm_t::alloc_tensor_queue(const torch::Tensor &t) {
     std::unique_lock<std::mutex> _lock_alloc(_mutex_alloc);
-    _pending_alloc.push_back(&t);
-    _alloc_map[static_cast<void*>(t.data_ptr())] = 0;
+    void* tensor_ptr = static_cast<void*>(t.data_ptr());
+    size_t tensor_size = t.numel()*t.element_size();
+    _pending_alloc.push_back(std::make_tuple(tensor_ptr, tensor_size));
+    _alloc_map[tensor_ptr] = 0;
     _lock_alloc.unlock();
     _cv_alloc.notify_all();
 }
 
 
-void datastates_llm_t::_read_file(int thread_id) {
+void datastates_llm_t::_read_file(const int thread_id) {
     while (is_active) {
         std::unique_lock<std::mutex> _lock_read(_mutex_read[thread_id]);
-        while(_pending_read[thread_id].empty() && is_active)
+        while(_pending_read[thread_id].empty() && is_active) 
             _cv_read[thread_id].wait(_lock_read);
         if (!is_active)
             return;
-        
         auto e              = _pending_read[thread_id].front();
         void * tensor_ptr   = std::get<0>(e);
         size_t f_start_offset = std::get<1>(e);
         size_t f_end_offset = std::get<2>(e);
         int fd              = std::get<3>(e);
         size_t tensor_size = f_end_offset-f_start_offset;
-        DBG("Starting to read file " << thread_id);
 
         size_t my_start_offset = thread_id*CHUNK_SIZE;
         size_t my_end_offset = my_start_offset+CHUNK_SIZE;
         std::unique_lock<std::mutex> _lock_alloc(_mutex_alloc, std::defer_lock);
 
+        uint64_t pread_time = 0;
+        TIMER_START(file_read);
         while (my_start_offset < tensor_size) {
             my_end_offset = std::min(my_start_offset+CHUNK_SIZE, tensor_size);
-            if (my_end_offset < _alloc_map[tensor_ptr]) {
+            if (my_end_offset > _alloc_map[tensor_ptr]) {
                 _lock_alloc.lock();
-                while (my_end_offset < _alloc_map[tensor_ptr])
+                while (my_end_offset > _alloc_map[tensor_ptr])
                     _cv_alloc.wait(_lock_alloc);
                 _lock_alloc.unlock();
                 _cv_alloc.notify_all();
             }
-
-            size_t bytesRead = pread(fd, tensor_ptr+my_start_offset, my_end_offset-my_start_offset, f_start_offset+my_start_offset);
-            DBG("Read file in progress " << thread_id << " read " << bytesRead << " from offset " << my_start_offset);
+            auto start_time = std::chrono::steady_clock::now();
+            size_t bytesRead = pread(fd, (char *)tensor_ptr+my_start_offset, my_end_offset-my_start_offset, f_start_offset+my_start_offset);
+            auto end_time = std::chrono::steady_clock::now();
+            pread_time += std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
             if (bytesRead != my_end_offset-my_start_offset) {
                 std::cerr << "Error reading from file. Read " << bytesRead << " intead of " << my_end_offset-my_start_offset << std::endl;
                 return;
             }
             my_start_offset += READ_THREADS*CHUNK_SIZE;
         }
+        TIMER_STOP(file_read, "Time to read file pread time " << pread_time << " ns for path ", tensor_size);
 
         _pending_read[thread_id].pop_front();
         _lock_read.unlock();
@@ -291,10 +297,12 @@ void datastates_llm_t::shutdown() {
         _cv_h2f.notify_all();
         _cv_d2h.notify_all();
         _cv_alloc.notify_all();
-        _thread_alloc.join();
+        DBG("Going to join alloc for " << _gpu_id);
+        // _thread_alloc.join();
         for(int thread_id=0; thread_id<READ_THREADS; thread_id++) {
             _cv_read[thread_id].notify_all();
-            _thread_read[thread_id].join();
+            DBG("Going to join read thread " << thread_id << " for " << _gpu_id);
+            // _thread_read[thread_id].join();
         }
         return;
     } catch (std::exception &e) {

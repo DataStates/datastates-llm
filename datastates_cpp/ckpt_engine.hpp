@@ -25,11 +25,16 @@
 #include <sys/mman.h> // madvise
 #include <cstddef>     // static_cast<size_t>
 #include <fcntl.h>
+#include <algorithm>
+#include <stdlib.h>   // posix_memalign
+#include <sys/mman.h> // madvise
+#include <cstddef>     // static_cast<size_t>
+#include <fcntl.h>
 
 #define MIN_TENSOR_SIZE static_cast<size_t>(1<<25)
 #define HUGEPAGES_SIZE static_cast<size_t>(1<<21)
-#define CHUNK_SIZE static_cast<size_t>(1<<24)
-#define READ_THREADS (8)
+#define CHUNK_SIZE static_cast<size_t>(1<<27)
+#define READ_THREADS (4)
 namespace py = pybind11;
 
 
@@ -58,7 +63,7 @@ class datastates_llm_t {
     // Restart functions and datastructures.
     void _alloc_tensor();
     // Store the tensor_pointer, total_size
-    std::deque<const torch::Tensor*> _pending_alloc;
+    std::deque<std::tuple<void*, size_t>> _pending_alloc;
     // Store the tensor_pointer, allocated_size
     std::map<void *, size_t> _alloc_map;
     std::mutex              _mutex_alloc;

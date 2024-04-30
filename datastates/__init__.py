@@ -27,7 +27,6 @@ class DataStates:
             self.logger.addHandler(channel)
             self.rank = rank
             self.logger.info(f"Initing datastates on rank {self.rank}")
-
             self.ckpt_engine = datastates_handle((config_params['host_cache_size'] << 30), 
                                             int(torch.cuda.current_device()),
                                             int(self.rank)
@@ -35,10 +34,7 @@ class DataStates:
             self.futures = None
             concurrent_parser_threads = 4
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
-            self.logger.info(f"Inited datastates on rank {self.rank}")
-            time.sleep(15)
-            
-
+            self.logger.info(f"Inited datastates on rank {self.rank}....")
         except Exception as exc:
             print(f"[DataStates][ERROR] Got exception during DataStates init {exc}")
             sys.exit(-1)
@@ -183,7 +179,7 @@ class DataStates:
             except Exception as exc:
                 self.logger.error(f"Got error with tensor loading {dtype}, {shape}, {exc}")
                 raise Exception(f"Got error with tensor loading {dtype}, {shape}, {exc}")
-            self.logger.info(f"[DataStates] Loaded checkpoint from {path} out_time {time.time()-out_time}, out_for_time: {time.time()-out_for_time} inner_time {inner_time}, total_size {total_size}.")
+            # self.logger.info(f"[DataStates] Loaded checkpoint from {path} out_time {time.time()-out_time}, out_for_time: {time.time()-out_for_time} inner_time {inner_time}, total_size {total_size}.")
             return data
         except Exception as exc:
             self.logger.info(f"[DataStates][ERROR] Could not load {path}, exception: {exc}")
