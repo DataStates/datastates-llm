@@ -17,6 +17,7 @@ KEY_SEPARATOR = "|"
 class DataStates:
     def __init__(self, config_params, rank) -> None:
         try:
+            t = time.time()
             logging_level = logging.INFO
             formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] [%(filename)s:%(lineno)d:%(funcName)s] %(message)s")
             channel = logging.StreamHandler(stream=sys.stdout)
@@ -34,7 +35,9 @@ class DataStates:
             self.futures = None
             concurrent_parser_threads = 4
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
-            self.logger.info(f"Inited datastates on rank {self.rank}....")
+            self.unique_id = 0
+            # self.logger.info(f"Inited datastates on rank {self.rank}....")
+            self.logger.info(f"<<<TIMER:init_time,{time.time()-t}>>>")
         except Exception as exc:
             print(f"[DataStates][ERROR] Got exception during DataStates init {exc}")
             sys.exit(-1)
@@ -127,12 +130,8 @@ class DataStates:
             sys.exit(-1)
 
     def load(self, path: str, map_location=None, num_restore_threads=8):
-        # self.logger.info(f"[DataStates] Loading checkpoint from {path}...")
-        # partition = torch.load(path, map_location=map_location)
+        # self.logger.info(f"[DataStates][Rank {self.rank}] Loading checkpoint at {time.time_ns()} from {path}...")
         out_time = time.time()
-        out_for_time = time.time()
-        total_size = 0
-        inner_time = 0
         try:
             f = open(path, 'rb')
             f.seek(0)
@@ -145,13 +144,20 @@ class DataStates:
             f.seek(start_offset)
             data = pickle.loads(f.read(end_offset-start_offset))
             try:
-                out_for_time = time.time()
-                tensors_restored = []
+                # First run async memory allocation in background for large tensors                           
+                tensor_pointer_map = {}
+                for k, v in header.items():
+                    [start_offset, end_offset] = np.add(v["data_offsets"], metadata_size)
+                    tensor_size = end_offset-start_offset
+                    tensor_pointer_map[start_offset] = self.unique_id
+                    self.ckpt_engine.alloc_tensor_queue(self.unique_id, tensor_size)
+                    self.unique_id += 1
+
                 for k, v in header.items():
                     split_k = deque(k.split(KEY_SEPARATOR))
                     dtype = v["dtype"]
                     if dtype.startswith("torch"):
-                        dtype = dtype.replace('torch.', '')
+                        dtype = getattr(torch, dtype.replace('torch.', ''))
                     shape = v["shape"]
                     dbg_tensor_sum = v["dbg_tensor_sum"]
                     [start_offset, end_offset] = np.add(v["data_offsets"], metadata_size)
@@ -167,20 +173,14 @@ class DataStates:
                     if dest != str("TENSOR."+k):
                         raise Exception(f"The key in header {k} does not match key at location {dest}")
 
-                    t = torch.empty(size=tuple(shape), dtype=getattr(torch, dtype))
-                    self.ckpt_engine.alloc_tensor_queue(t)
-                    tensors_restored.append((t, path, start_offset, end_offset))
-                    pre_dest[sub_k] = t
-                self.logger.info(f"Allocation enqueing time: {time.time()-out_for_time}")
-                ### Now that the empty tensors are being allocated in the background, start reading into them one by one
-                for (t, path, start_offset, end_offset) in tensors_restored:
-                    self.ckpt_engine.restore_tensor(t, path, start_offset, end_offset)
-                self.logger.info(f"Allocation enqueing+restore time: {time.time()-out_for_time}")
-                    
+                    tensor_size = end_offset-start_offset
+                    assert start_offset in tensor_pointer_map, f"The tensors should have preallocated buffer but does not."
+                    t = self.ckpt_engine.restore_tensor(tensor_pointer_map[start_offset], tuple(shape), dtype, path, start_offset, end_offset)
+                    pre_dest[sub_k] = t                   
             except Exception as exc:
                 self.logger.error(f"Got error with tensor loading {dtype}, {shape}, {exc}")
                 raise Exception(f"Got error with tensor loading {dtype}, {shape}, {exc}")
-            # self.logger.info(f"[DataStates] Loaded checkpoint from {path} out_time {time.time()-out_time}, out_for_time: {time.time()-out_for_time} inner_time {inner_time}, total_size {total_size}.")
+            self.logger.info(f"[DataStates] Loaded checkpoint from {path} out_time {time.time()-out_time}.")
             return data
         except Exception as exc:
             self.logger.info(f"[DataStates][ERROR] Could not load {path}, exception: {exc}")

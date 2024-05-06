@@ -33,7 +33,8 @@
 
 #define MIN_TENSOR_SIZE static_cast<size_t>(1<<25)
 #define HUGEPAGES_SIZE static_cast<size_t>(1<<21)
-#define CHUNK_SIZE static_cast<size_t>(1<<27)
+#define PAGE_SIZE static_cast<size_t>(4096)
+#define CHUNK_SIZE static_cast<size_t>(1ULL<<25)
 #define READ_THREADS (4)
 namespace py = pybind11;
 
@@ -62,17 +63,18 @@ class datastates_llm_t {
 
     // Restart functions and datastructures.
     void _alloc_tensor();
-    // Store the tensor_pointer, total_size
-    std::deque<std::tuple<void*, size_t>> _pending_alloc;
+    // Store the unique_id, tensor_pointer, total_size
+    std::deque<std::tuple<int, void*, size_t>> _pending_alloc;
     // Store the tensor_pointer, allocated_size
-    std::map<void *, size_t> _alloc_map;
+    std::map<int, size_t> _alloc_size_map;
+    std::map<int, void *> _alloc_ptr_map;
     std::mutex              _mutex_alloc;
     std::condition_variable _cv_alloc;
     std::thread             _thread_alloc;
 
     void _read_file(int thread_id);
-    // Store the tensor_pointer, start_offset, end_offset, file descriptor
-    std::deque<std::tuple<void *, size_t, size_t, int>> _pending_read[READ_THREADS];
+    // Store the unique_id, start_offset, end_offset, file descriptor
+    std::deque<std::tuple<int, size_t, size_t, int>> _pending_read[READ_THREADS];
     std::mutex              _mutex_read[READ_THREADS];
     std::condition_variable _cv_read[READ_THREADS];
     std::thread             _thread_read[READ_THREADS];
@@ -81,8 +83,8 @@ class datastates_llm_t {
     datastates_llm_t(size_t host_cache_size, int gpu_id, int rank=-1);
     void ckpt_tensor(int version, const torch::Tensor &t, const std::uint64_t size, const std::uint64_t file_offset, std::string path);
     
-    void alloc_tensor_queue(const torch::Tensor &t);
-    void restore_tensor(const torch::Tensor &t, std::string path, const std::uint64_t start_offset, const std::uint64_t end_offset);
+    void alloc_tensor_queue(int unique_id, size_t size);
+    const torch::Tensor restore_tensor(int unique_id, torch::IntArrayRef shape, py::object dtype, std::string path, const std::uint64_t start_offset, const std::uint64_t end_offset);
     void wait();
     void shutdown();
 };

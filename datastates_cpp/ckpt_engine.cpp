@@ -55,7 +55,7 @@ void datastates_llm_t::_d2h_trf() {
             size_t file_offset  = std::get<4>(e);
             std::string path    = std::get<5>(e);
 
-            DBG("[D2H][" << _rank << "] transfer of tensor " << uid << " version " << version << " torch sum is " << torch::sum(t) << " size " << size);
+            // DBG("[D2H][" << _rank << "] transfer of tensor " << uid << " version " << version << " torch sum is " << torch::sum(t) << " size " << size);
             mem_region_t* m = mem->allocate(uid, size);
             char *host_ptr = m->ptr;
             char *src_ptr = static_cast<char *>(t.data_ptr());
@@ -92,7 +92,7 @@ void datastates_llm_t::_h2f_trf() {
                 _cv_h2f.notify_all();
                 return;
             }
-            TIMER_START(h2f_time);
+            // TIMER_START(h2f_time);
             auto e = _pending_h2f.front();
             _lock_h2f.unlock();
             _cv_h2f.notify_all();
@@ -118,7 +118,7 @@ void datastates_llm_t::_h2f_trf() {
             _pending_h2f.pop_front();
             _lock_h2f.unlock();
             _cv_h2f.notify_all();
-            TIMER_STOP(h2f_time, "[H2F][" << _rank << "] Total time in h2f to save tensor " << uid << " version " << version << " of size " << size, size);
+            // TIMER_STOP(h2f_time, "[H2F][" << _rank << "] Total time in h2f to save tensor " << uid << " version " << version << " of size " << size, size);
         }  catch (std::exception &e) {
             FATAL("Exception caught in h2f trf." << e.what());
         } catch (...) {
@@ -160,30 +160,36 @@ void datastates_llm_t::_alloc_tensor() {
             return;
         
         auto e          = _pending_alloc.front();
-        void *ptr       = std::get<0>(e);
-        size_t total_size = std::get<1>(e);
+        int unique_id   = std::get<0>(e);
+        char *ptr       = static_cast<char*>(std::get<1>(e));
+        size_t total_size = std::get<2>(e);
         _pending_alloc.pop_front();
         _lock_alloc.unlock();
         _cv_alloc.notify_all();
         
         TIMER_START(alloc_time);
+        // #pragma omp parallel for num_threads(4)
         for (size_t i=0; i<total_size; i+=CHUNK_SIZE) {
             size_t rem = std::min(CHUNK_SIZE, total_size-i);
             memset((char *)ptr+i, 0, rem);
-            _alloc_map[ptr] += rem;
+            // __builtin_memset((char *)ptr+i, 0, rem);
+            _alloc_size_map[unique_id] += rem;
             _cv_alloc.notify_all();
         }
-        TIMER_STOP(alloc_time, "Time to alloc is ", total_size)
+        TIMER_STOP(alloc_time, "Time to alloc is ", total_size);
     }
 }
 
 
-void datastates_llm_t::alloc_tensor_queue(const torch::Tensor &t) {
+void datastates_llm_t::alloc_tensor_queue(int unique_id, size_t tensor_size) {
     std::unique_lock<std::mutex> _lock_alloc(_mutex_alloc);
-    void* tensor_ptr = static_cast<void*>(t.data_ptr());
-    size_t tensor_size = t.numel()*t.element_size();
-    _pending_alloc.push_back(std::make_tuple(tensor_ptr, tensor_size));
-    _alloc_map[tensor_ptr] = 0;
+    // void* tensor_ptr = (void *)malloc(tensor_size);
+    void* tensor_ptr;
+    posix_memalign((void **)&tensor_ptr, HUGEPAGES_SIZE, tensor_size);
+    madvise(tensor_ptr, tensor_size, MADV_HUGEPAGE);
+    _pending_alloc.push_back(std::make_tuple(unique_id, tensor_ptr, tensor_size));
+    _alloc_size_map[unique_id] = 0;
+    _alloc_ptr_map[unique_id] = tensor_ptr;
     _lock_alloc.unlock();
     _cv_alloc.notify_all();
 }
@@ -197,11 +203,13 @@ void datastates_llm_t::_read_file(const int thread_id) {
         if (!is_active)
             return;
         auto e              = _pending_read[thread_id].front();
-        void * tensor_ptr   = std::get<0>(e);
+        int unique_id       = std::get<0>(e);
         size_t f_start_offset = std::get<1>(e);
         size_t f_end_offset = std::get<2>(e);
         int fd              = std::get<3>(e);
         size_t tensor_size = f_end_offset-f_start_offset;
+        void * tensor_ptr   = _alloc_ptr_map[unique_id];
+        assert((tensor_size == _alloc_size_map[unique_id] ) && "Tensor size to be read from file is different than allocated");
 
         size_t my_start_offset = thread_id*CHUNK_SIZE;
         size_t my_end_offset = my_start_offset+CHUNK_SIZE;
@@ -211,9 +219,9 @@ void datastates_llm_t::_read_file(const int thread_id) {
         TIMER_START(file_read);
         while (my_start_offset < tensor_size) {
             my_end_offset = std::min(my_start_offset+CHUNK_SIZE, tensor_size);
-            if (my_end_offset > _alloc_map[tensor_ptr]) {
+            if (my_end_offset > _alloc_size_map[unique_id]) {
                 _lock_alloc.lock();
-                while (my_end_offset > _alloc_map[tensor_ptr])
+                while (my_end_offset > _alloc_size_map[unique_id])
                     _cv_alloc.wait(_lock_alloc);
                 _lock_alloc.unlock();
                 _cv_alloc.notify_all();
@@ -236,16 +244,18 @@ void datastates_llm_t::_read_file(const int thread_id) {
     }
 }
 
-void datastates_llm_t::restore_tensor(const torch::Tensor &t, std::string path, const std::uint64_t f_start_offset, const std::uint64_t f_end_offset) {
+const torch::Tensor datastates_llm_t::restore_tensor(int unique_id, torch::IntArrayRef shape, py::object dtype, std::string path, const std::uint64_t f_start_offset, const std::uint64_t f_end_offset) {
     int fd = open(path.c_str(), O_RDONLY);
+    assert((_alloc_ptr_map.find(unique_id) != _alloc_ptr_map.end()) && "Please enqueue this tensor for background allocation first");
     if (fd == -1) {
         std::cerr << "Failed to open file." << std::endl;
-        return;
+        return torch::Tensor();
     }
+    
     // Launch the read operations
     for (int thread_id=0; thread_id<READ_THREADS; thread_id++) {
         std::unique_lock<std::mutex> _lock_read(_mutex_read[thread_id]);
-        _pending_read[thread_id].push_back(std::tuple(static_cast<void*>(t.data_ptr()), f_start_offset, f_end_offset, fd));
+        _pending_read[thread_id].push_back(std::tuple(unique_id, f_start_offset, f_end_offset, fd));
         _lock_read.unlock();
         _cv_read[thread_id].notify_all();
     }
@@ -257,6 +267,12 @@ void datastates_llm_t::restore_tensor(const torch::Tensor &t, std::string path, 
             _cv_read[thread_id].wait(_lock_read);
         _lock_read.unlock();
     }
+    void* ptr = _alloc_ptr_map[unique_id];
+    _alloc_ptr_map.erase(unique_id);
+    _alloc_size_map.erase(unique_id);
+    torch::ScalarType data_type = torch::python::detail::py_object_to_dtype(dtype);
+    auto options = torch::TensorOptions().dtype(data_type); //.pinned_memory(true);
+    return torch::from_blob(ptr, shape, options);
 }
 
 
