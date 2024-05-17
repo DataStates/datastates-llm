@@ -1,5 +1,6 @@
 #include <torch/extension.h>
-#include "ckpt_engine.hpp"
+#include "engine.hpp"
+#include <pybind11/iostream.h>
 
 namespace py = pybind11;
 // PYBIND11_MODULE(_datastates, m) {
@@ -11,6 +12,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .. autosummary::
            :toctree: _generate
            ckpt_tensor
+           restore_tensor
            wait
            shutdown
     )pbdoc";
@@ -18,6 +20,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     py::class_<datastates_llm_t>(m, "handle")
         .def(py::init<const size_t, int, int>())
         .def("ckpt_tensor", &datastates_llm_t::ckpt_tensor, py::call_guard<py::gil_scoped_release>())
-        .def("wait", &datastates_llm_t::wait, py::call_guard<py::gil_scoped_release>())
+        .def("restore_tensor", &datastates_llm_t::restore_tensor, py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
+        .def("wait", &datastates_llm_t::wait, py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
         .def("shutdown", &datastates_llm_t::shutdown);
 }

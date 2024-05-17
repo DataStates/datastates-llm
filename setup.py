@@ -1,7 +1,7 @@
 from setuptools import setup
 import subprocess
 
-subprocess.check_call(['pip', 'install', '-v', './datastates_cpp'])
+subprocess.check_call(['pip', 'install', '-v', './datastates_src'])
 
 name="datastates"
 setup(

@@ -15,14 +15,17 @@ class DeepSpeedConfig:
     
     class DataStatesConfig:
         def __init__(self):
+            self.enabled = True
             self.config = {
-                "host_cache_size": 1
+                "host_cache_size": 1,
+                "parser_threads": 2,
+                "pin_host_cache": True
             }
 
 def test_datastates():
     deepspeed_config = DeepSpeedConfig()
     print(f"Going to initalize datastates engine...")
-    ckpt_engine = datastates.DataStates(deepspeed_config=deepspeed_config, rank=0)
+    ckpt_engine = datastates.Checkpointing(deepspeed_config=deepspeed_config, rank=0)
     device = torch.device("cpu")    
     if torch.cuda.is_available():
         print(f"Found {torch.cuda.device_count()} CUDA devices")
@@ -45,15 +48,16 @@ def test_datastates():
         "random_np_obj": np_array
     }
     print(f"Engine initalized.. Going to checkpoint now...")
-    ckpt_engine.save(state_dict=ckpt_obj, path=ckpt_path)
     tensor_sum = torch.sum(tensor)
+    ckpt_engine.save(state_dict=ckpt_obj, path=ckpt_path)
     ckpt_engine.wait()
+
     time.sleep(5) # sleep to ensure ckpt file is written
+    print(f"Sleep for 5s complete...")      
 
     recovered_obj = ckpt_engine.load(path=ckpt_path)
     recovered_tensor_sum = torch.sum(recovered_obj["tensor1"])
     print(f"Ckpt tensor sum: {tensor_sum}, Recovered tensor sum: {recovered_tensor_sum}")
-    # print(recovered_obj)
     del ckpt_engine
     
 if __name__ == "__main__":
