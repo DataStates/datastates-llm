@@ -38,7 +38,7 @@ def parse_config(config) -> dict:
     if config_class == "DeepSpeedConfig":
         checkpointing_config = parse_ds_config(config)
         IS_DEEPSPEED_ENABLED = True
-    else config_class == "dict":
+    elif config_class == "dict":
         checkpointing_config = config         
 
     for k, _ in result.items():

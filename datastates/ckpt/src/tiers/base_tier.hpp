@@ -24,7 +24,8 @@ public:
     TIER_TYPES tier_type_;
     mem_pool_t* mem_pool = nullptr;
     base_tier_t(TIER_TYPES tier_type, int gpu_id, unsigned int num_threads, size_t total_size): 
-        tier_type_(tier_type), gpu_id_(gpu_id), num_threads_(num_threads), total_size_(total_size) {};
+        gpu_id_(gpu_id), num_threads_(num_threads), total_size_(total_size), tier_type_(tier_type) {};
+    virtual ~base_tier_t() {};
     virtual void flush(mem_region_t* src) = 0;
     virtual void fetch(mem_region_t* src) = 0;
     virtual void wait_for_completion() = 0;

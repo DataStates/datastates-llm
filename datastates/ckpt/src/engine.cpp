@@ -13,8 +13,6 @@ datastates_llm_t::datastates_llm_t(size_t host_cache_size, int gpu_id_, int rank
         
     } catch(std::exception& e) {
         FATAL("Standard exception caught in datastates init: " << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in datastates init.");
     }
 }
 
@@ -33,8 +31,6 @@ void datastates_llm_t::ckpt_tensor(int version, const torch::Tensor &t, const st
         return;
     } catch (std::exception &e) {
         FATAL("Exception caught in ckpt_tensor." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in ckpt_tensor." << path);
     }
 }
 
@@ -49,8 +45,6 @@ void datastates_llm_t::restore_tensor(int version, const torch::Tensor &t, const
         return;
     } catch (std::exception &e) {
         FATAL("Exception caught in ckpt_tensor." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in ckpt_tensor." << path);
     }
 }
 
@@ -59,8 +53,6 @@ void datastates_llm_t::wait() {
         gpu_tier->wait_for_completion();
     }  catch (std::exception &e) {
         FATAL("Exception caught in wait D2H." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in wait D2H.");
     }
 }
 
@@ -71,7 +63,5 @@ void datastates_llm_t::shutdown() {
         return;
     } catch (std::exception &e) {
         FATAL("Exception caught in shutdown." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in shutdown.");
     }
 }

@@ -3,6 +3,7 @@
 
 #include "base_tier.hpp"
 #include <fstream>
+#include <filesystem>
 
 class host_tier_t : public base_tier_t {
     char* start_ptr_ = nullptr;

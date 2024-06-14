@@ -10,8 +10,6 @@ mem_pool_t::mem_pool_t(char* start_ptr, size_t total_size, int rank): start_ptr_
         DBG("Returned from the memory pool function");
     } catch (std::exception &e) {
         FATAL("Exception caught in memory pool constructor." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in memory pool constructor.");
     }
 }
 
@@ -23,8 +21,6 @@ mem_pool_t::~mem_pool_t() {
         return;
     } catch (std::exception &e) {
         FATAL("Exception caught in memory pool destructor." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in memory pool destructor.");
     }
 }
 
@@ -49,8 +45,6 @@ void mem_pool_t::assign_(mem_region_t* m) {
         DBG("[" << rank_ << "]" << "Assigned " << m->uid << " of size " << m->size << " curr size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
     } catch (std::exception &e) {
         FATAL("Exception caught in assign_." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in assign_.");
     }
 }
 
@@ -100,8 +94,6 @@ void mem_pool_t::allocate(mem_region_t* m) {
         DBG("[" << rank_ << "]" << "Allocated for " << m->uid << " of size " << m->size << " when current memory is " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
     } catch (std::exception &e) {
         FATAL("Exception caught in allocate function." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in allocate function.");
     }
 }
 
@@ -132,8 +124,6 @@ void mem_pool_t::deallocate(mem_region_t* m) {
         mem_cv_.notify_all();
     } catch (std::exception &e) {
         FATAL("Exception caught in deallocate operation ." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in deallocate operation.");
     }
 }
 
@@ -150,7 +140,5 @@ void mem_pool_t::print_trace_() {
         DBG("===================================================");
     } catch (std::exception &e) {
         FATAL("Exception caught in allocate print_trace_." << e.what());
-    } catch (...) {
-        FATAL("Unknown exception caught in print_trace_.");
     }
 }

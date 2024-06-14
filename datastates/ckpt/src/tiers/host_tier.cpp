@@ -39,16 +39,24 @@ void host_tier_t::flush_io_() {
         if (res == false || is_active == false)
             return;
         mem_region_t* src = flush_q.get_front();
-        DBG("[HOST_TIER] Flushing from host to file.");
-        std::ofstream f;            
-        f.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-        f.open(src->path, std::ios::in | std::ios::out | std::ios::binary);
-        f.seekp(src->file_start_offset);
-        f.write(src->ptr, src->size);
-        f.flush();      // This is for consistency guarantee.
-        f.close();
-        mem_pool->deallocate(src);
-        flush_q.pop();
+        DBG("[HOST_TIER] Flushing from host to file at file_offset " << src->file_start_offset);
+        try {
+            if (!std::filesystem::exists(src->path)) {
+                std::ofstream createFile(src->path, std::ios::binary);
+                createFile.close();
+            }
+            std::ofstream f;            
+            f.exceptions(std::ofstream::failbit | std::ofstream::badbit);
+            f.open(src->path, std::ios::in | std::ios::out | std::ios::binary);
+            f.seekp(src->file_start_offset);
+            f.write(src->ptr, src->size);
+            f.flush();      // This is for consistency guarantee.
+            f.close();
+            mem_pool->deallocate(src);
+            flush_q.pop();
+        } catch (const std::exception& ex) {
+            FATAL("[HostFlush] Got exception " << ex.what());
+        }
     }
 }
 
