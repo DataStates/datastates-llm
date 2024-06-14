@@ -1,4 +1,3 @@
-from datastates_src import handle as datastates_handle
 import torch
 from concurrent.futures import ThreadPoolExecutor
 import time
@@ -9,23 +8,22 @@ import pickle
 import json
 import ctypes
 import numpy as np
-from .utils import get_logger, get_checkpoint_version, parse_config, HOST_CACHE_SIZE, CKPT_PARSER_THREADS, IS_DEEPSPEED_ENABLED
+from .utils import get_logger, get_checkpoint_version, parse_config, HOST_CACHE_SIZE, CKPT_PARSER_THREADS
 
 SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
 
 class Checkpointing:
-    def __init__(self, deepspeed_config={}, rank=0) -> None:
+    def __init__(self, ckpt_config={}, rank=0) -> None:
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("CUDA is not available. Make sure CUDA drivers are installed and GPU is accessible.")
             
             self.rank           = int(rank)
-            datastates_config   = parse_config(deepspeed_config)
+            datastates_config   = parse_config(ckpt_config)
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
-            self.is_deepspeed_enabled = bool(datastates_config[IS_DEEPSPEED_ENABLED])
             self.ckpt_engine = datastates_handle(host_cache_size, cuda_device, self.rank)   
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.logger = get_logger(__name__)
@@ -37,7 +35,7 @@ class Checkpointing:
 
     def save_background(self, state_dict: Union[dict, OrderedDict], path: str):
         try:
-            version = get_checkpoint_version(path, self.is_deepspeed_enabled, self.last_ckpt_version)
+            version = get_checkpoint_version(path, self.last_ckpt_version)
             header = {}
             async_copies = {}
             _start_tensor_offset = 0
@@ -97,7 +95,7 @@ class Checkpointing:
             for _, v in async_copies.items():
                 v["file_offset"] += metadata_size
                 self.ckpt_engine.ckpt_tensor(version, v["tensor"], v["tensor_size"], v["file_offset"], path)
-            self.last_ckpt_version = version
+            
             return None
         except Exception as exc:
             self.logger.error(f"[DataStates][ERROR] From DataStates save_background, generated exception: {exc}")
@@ -116,7 +114,7 @@ class Checkpointing:
             
     def load(self, path: str, map_location=None):
         try:
-            version = get_checkpoint_version(path, self.is_deepspeed_enabled, self.last_ckpt_version)
+            version = get_checkpoint_version(path, self.last_ckpt_version)
             f = open(path, 'rb')
             f.seek(0)
             header_size_bytes = f.read(SIZE_UINT64)
@@ -164,6 +162,7 @@ class Checkpointing:
     def commit(self, tag):
         self.wait()
         self.logger.info(f"[DataStates] Checkpoint {tag} is ready now!")
+        self.last_ckpt_version += 1
         return True
 
     def wait(self):
