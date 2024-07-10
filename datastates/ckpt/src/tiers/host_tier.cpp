@@ -39,7 +39,7 @@ void host_tier_t::flush_io_() {
         if (res == false || is_active == false)
             return;
         mem_region_t* src = flush_q.get_front();
-        DBG("[HOST_TIER] Flushing from host to file at file_offset " << src->file_start_offset);
+        DBG("[HOST_TIER] Flushing from host to file " << src->uid << " at file_offset " << src->file_start_offset << " at " << src->path << " tensor of size " << src->size);
         try {
             if (!std::filesystem::exists(src->path)) {
                 std::ofstream createFile(src->path, std::ios::binary);

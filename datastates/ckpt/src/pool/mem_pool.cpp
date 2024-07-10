@@ -41,6 +41,7 @@ void mem_pool_t::assign_(mem_region_t* m) {
         if (head_ > total_size_)
             head_ = 0;
         curr_size_ += m->size;
+        alloc_map_[m->uid] = m->size;
         mem_q_.push_back(m);
         DBG("[" << rank_ << "]" << "Assigned " << m->uid << " of size " << m->size << " curr size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
     } catch (std::exception &e) {
@@ -99,16 +100,17 @@ void mem_pool_t::allocate(mem_region_t* m) {
 
 void mem_pool_t::deallocate(mem_region_t* m) {
     try {
-        if (get_capacity() <= 0)
+        if (get_capacity() <= 0 || alloc_map_.find(m->uid) == alloc_map_.end())
             return;
-        DBG("[" << rank_ << "]" << "Attempting to deallocate " << m->uid << " of size " << m->size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
         if (mem_q_.empty() || m->uid < 1)
             return;
         mem_region_t *top_m = mem_q_.front();
+        if (alloc_map_[m->uid] != m->size) {
+            FATAL("The size allocated from the pool " << alloc_map_[m->uid] << " is different than the original size of tensor " << m->size);
+        }
         if (m->uid != top_m->uid) {
-            FATAL("Should deallocate the tail first. Only FIFO eviction allowed");
-            FATAL("Tried deleting " << m->uid << " but front element was " << top_m->uid);
             print_trace_();
+            FATAL("Should deallocate the tail first. Only FIFO eviction allowed. Tried deleting " << m->uid << " but front element was " << top_m->uid);            
             return;
         }
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
@@ -118,6 +120,7 @@ void mem_pool_t::deallocate(mem_region_t* m) {
         curr_size_ -= m->size;
         if (curr_size_ == 0)
             head_ = tail_ = 0;
+        alloc_map_.erase(m->uid);
         DBG("[" << rank_ << "]" << "deallocated " << m->uid << " of size " << m->size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
         mem_q_.pop_front();
         mem_lock_.unlock();

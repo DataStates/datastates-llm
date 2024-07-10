@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <deque>
 #include <cassert>
+#include <map>
 #include "common/defs.hpp"
 #include "common/mem_region.hpp"
 #include "common/utils.hpp"
@@ -22,6 +23,7 @@ class mem_pool_t {
     std::mutex mem_mutex_;
     std::condition_variable mem_cv_;
     std::deque<mem_region_t*> mem_q_;
+    std::map<uint64_t, size_t> alloc_map_;
     bool is_active = true;
     int rank_ = -1;
     void print_trace_();
