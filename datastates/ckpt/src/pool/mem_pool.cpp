@@ -102,7 +102,6 @@ void mem_pool_t::deallocate(mem_region_t* m) {
     try {
         if (get_capacity() <= 0 || alloc_map_.find(m->uid) == alloc_map_.end())
             return;
-        DBG("[" << rank_ << "]" << "Attempting to deallocate " << m->uid << " of size " << m->size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
         if (mem_q_.empty() || m->uid < 1)
             return;
         mem_region_t *top_m = mem_q_.front();
@@ -110,9 +109,8 @@ void mem_pool_t::deallocate(mem_region_t* m) {
             FATAL("The size allocated from the pool " << alloc_map_[m->uid] << " is different than the original size of tensor " << m->size);
         }
         if (m->uid != top_m->uid) {
-            FATAL("Should deallocate the tail first. Only FIFO eviction allowed");
-            FATAL("Tried deleting " << m->uid << " but front element was " << top_m->uid);
             print_trace_();
+            FATAL("Should deallocate the tail first. Only FIFO eviction allowed. Tried deleting " << m->uid << " but front element was " << top_m->uid);            
             return;
         }
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
