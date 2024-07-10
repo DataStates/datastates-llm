@@ -21,7 +21,7 @@ class CkptEngine:
         try:
             for t in tensors:
                 version, tensor, file_offset, path = t
-                tensor_bytes = tensor.untyped_storage().size()
+                tensor_bytes = tensor.numel()*tensor.element_size()
                 assert tensor_bytes > 0, "Tensor size should be > 0"
                 self.ckpt_engine.ckpt_tensor(version, tensor, tensor_bytes, file_offset, path)
         except Exception as exc:
@@ -32,7 +32,7 @@ class CkptEngine:
         try:
             for t in tensors:
                 version, tensor, file_offset, path = t
-                tensor_bytes = tensor.untyped_storage().size()
+                tensor_bytes = tensor.numel()*tensor.element_size()
                 assert tensor_bytes > 0, "Tensor size should be > 0"
                 self.ckpt_engine.restore_tensor(version, tensor, tensor_bytes, file_offset, path)
         except Exception as exc:
