@@ -4,8 +4,7 @@ host_tier_t::host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size
     base_tier_t(HOST_PINNED_TIER, gpu_id, num_threads, total_size) {
     assert((num_threads == 1) && "[HOST_TIER] Number of flush and fetch threads should be set to 1.");
     checkCuda(cudaSetDevice(gpu_id_));
-    checkCuda(cudaMallocHost(&start_ptr_, total_size));
-    mem_pool = new mem_pool_t(start_ptr_, total_size, gpu_id);
+    mem_pool = new mem_pool_t<rmm::mr::pinned_memory_resource>(HOST_PINNED_TIER, total_size, gpu_id);
     flush_thread_ = std::thread([&] { flush_io_(); });
     fetch_thread_ = std::thread([&] { fetch_io_(); });
     flush_thread_.detach();
@@ -42,20 +41,43 @@ void host_tier_t::flush_io_() {
         DBG("[HOST_TIER] Flushing from host to file at file_offset " << src->file_start_offset);
         try {
             if (!std::filesystem::exists(src->path)) {
-                std::ofstream createFile(src->path, std::ios::binary);
-                createFile.close();
+                try {   
+                    std::ofstream createFile(src->path, std::ios::binary);
+                    createFile.close();
+                } catch (const std::exception& ex) {
+                    FATAL("[HostFlush] Got exception in create file " << ex.what() << " while writing to file " << src->path << " at offset " << src->file_start_offset);
+                }
             }
             std::ofstream f;            
             f.exceptions(std::ofstream::failbit | std::ofstream::badbit);
             f.open(src->path, std::ios::in | std::ios::out | std::ios::binary);
-            f.seekp(src->file_start_offset);
-            f.write(src->ptr, src->size);
+            if (!f.is_open()) {
+                FATAL("Failed to open the file: " << src->path);
+                return;
+            }
+            try {
+                f.seekp(src->file_start_offset);
+            } catch (const std::exception& ex) {
+                FATAL("[HostFlush] Got exception in seekp " << ex.what() << " while writing to file " << src->path << " at offset " << src->file_start_offset << " curr file size " << std::filesystem::file_size(src->path));
+            }
+            try{
+                f.write(src->ptr, src->size);
+            } catch (const std::ofstream::failure& e) {
+                std::error_code ec(errno, std::generic_category());
+                std::cerr << "Exception writing to file: " << e.what() << std::endl;
+                std::cerr << "Error code: " << ec.value() << " - " << ec.message() << std::endl;
+            } catch (const std::system_error& e) {
+                std::cerr << "System error: " << e.what() << std::endl;
+                std::cerr << "Error code: " << e.code() << " - " << e.code().message() << std::endl;
+            } catch (const std::exception& ex) {
+                FATAL("[HostFlush] Got exception in write " << ex.what() << " while writing to file " << src->path << " at offset " << src->file_start_offset);
+            }
             f.flush();      // This is for consistency guarantee.
             f.close();
             mem_pool->deallocate(src);
             flush_q.pop();
         } catch (const std::exception& ex) {
-            FATAL("[HostFlush] Got exception " << ex.what());
+            FATAL("[HostFlush] Got exception " << ex.what() << " while writing to file " << src->path << " at offset " << src->file_start_offset);
         }
     }
 }
@@ -78,4 +100,13 @@ void host_tier_t::fetch_io_() {
         f.close();
         fetch_q.pop();
     }
+}
+
+
+void host_tier_t::tier_allocate(mem_region_t* region) {
+    mem_pool->allocate(region);
+}
+
+void host_tier_t::tier_deallocate(mem_region_t* region) {
+    mem_pool->deallocate(region);
 }

@@ -22,7 +22,6 @@ protected:
     atomic_queue_t fetch_q;
 public:
     TIER_TYPES tier_type_;
-    mem_pool_t* mem_pool = nullptr;
     base_tier_t(TIER_TYPES tier_type, int gpu_id, unsigned int num_threads, size_t total_size): 
         gpu_id_(gpu_id), num_threads_(num_threads), total_size_(total_size), tier_type_(tier_type) {};
     virtual ~base_tier_t() {};
@@ -34,6 +33,8 @@ public:
     };
     virtual void flush_io_() = 0;
     virtual void fetch_io_() = 0;
+    virtual void tier_allocate(mem_region_t* region) = 0;
+    virtual void tier_deallocate(mem_region_t* region) = 0;
 };
 
 #endif //__DATASTATES_BASE_TIER_HPP

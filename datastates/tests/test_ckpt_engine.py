@@ -14,6 +14,7 @@ def test_ckpt_engine():
     tensor_dtype = torch.bfloat16
     tensor1 = torch.randn(tensor_shape, dtype=tensor_dtype).to(device)
     tensor2 = torch.randn(tensor_shape, dtype=tensor_dtype).to(device)
+    tensor_bytes = tensor1.numel()*tensor1.element_size()
 
     ckpt_path = "/dev/shm/datastates-ckpt.pt"
 
@@ -21,7 +22,7 @@ def test_ckpt_engine():
     version = 1
     tensors = [
         (version, tensor1, file_offset, ckpt_path),
-        (version, tensor2, file_offset+tensor1.untyped_storage().size(), ckpt_path),
+        (version, tensor2, file_offset+tensor_bytes, ckpt_path),
     ]
 
     print(f"Invoking async checkpoint...")
@@ -34,7 +35,7 @@ def test_ckpt_engine():
     rec_tensor2 = tensor2.clone().zero_().cpu()
     rec_tensors = [
         (version, rec_tensor1, file_offset, ckpt_path),
-        (version, rec_tensor2, file_offset+rec_tensor1.untyped_storage().size(), ckpt_path),
+        (version, rec_tensor2, file_offset+rec_tensor1.tensor_bytes, ckpt_path),
     ]
     ckpt_engine.load(rec_tensors)
     print(f"tensor1 = {torch.sum(tensor1)}; recovered tensor1 = {torch.sum(rec_tensor1)}")

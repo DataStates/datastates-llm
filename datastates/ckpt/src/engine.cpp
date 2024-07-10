@@ -19,7 +19,7 @@ datastates_llm_t::datastates_llm_t(size_t host_cache_size, int gpu_id_, int rank
 void datastates_llm_t::ckpt_tensor(int version, const torch::Tensor &t, const std::uint64_t size, const std::uint64_t file_offset, std::string path) {
     try {
         uint64_t uid = local_uid++;
-        DBG("Going to checkpoint tensor of UID " << uid << " and size " << size << " at offset " << file_offset);
+        DBG("Going to checkpoint tensor of UID " << uid << " and size " << size << " at offset " << file_offset << " is CUDA " << t.device().is_cuda() << " at path " << path);
         if (t.device().is_cuda()) {
             assert((t.device().is_cuda() && t.device().index() == gpu_id) && "Tensor not on the same GPU as ckpt engine");
             mem_region_t* m = new mem_region_t(version, uid, static_cast<char *>(t.data_ptr()), size, file_offset, path, GPU_TIER);

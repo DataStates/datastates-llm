@@ -1,7 +1,12 @@
 #ifndef __DATASTATES_UTILS_HPP
 #define __DATASTATES_UTILS_HPP
 #include <iostream>
+#include <cuda.h>
 #include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
+#include <cuda/std/type_traits>
+#include <cuda/pipeline> // This is needed for cuda_stream_view of rapids rmm
+
 #include <chrono>
 
 #define checkCuda(ans) { checkCudaFunc((ans), __FILE__, __LINE__); }
@@ -19,11 +24,11 @@ inline void checkCudaFunc(cudaError_t code, const char *file, int line, bool abo
 }
 
 // #define __PROFILE
-#ifndef __PROFILE
-    #define TIMER_START(t) {}
-    #define TIMER_STOP(t, m, s) {}
-    #define DBG(m) {}
-#else
+// #ifndef __PROFILE
+//     #define TIMER_START(t) {}
+//     #define TIMER_STOP(t, m, s) {}
+//     #define DBG(m) {}
+// #else
     static auto beginning = std::chrono::steady_clock::now();
     #define TIMER_START(timer) auto timer = std::chrono::steady_clock::now();
     #define TIMER_STOP(timer, message, size) {\
@@ -35,6 +40,6 @@ inline void checkCudaFunc(cudaError_t code, const char *file, int line, bool abo
             << " [THRU: " << (double)((double)size/(double)d) << "]" << std::endl; \
     }
     #define DBG(message) MESSAGE("DEBUG", message)
-#endif
+// #endif
 
 #endif //__DATASTATES_UTILS_HPP

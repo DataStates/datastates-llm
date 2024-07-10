@@ -53,6 +53,7 @@ void mem_pool_t::allocate(mem_region_t* m) {
         if (m->size > total_size_) 
             FATAL("[" << rank_ << "]" <<"Cannot allocate size " << m->size << " larger than the pool of " << total_size_);
         m->ptr = nullptr;
+        DBG("[" << rank_ << "]" << "Attempting to allocate for " << m->uid << " of size " << m->size << " when current memory is " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
         while((curr_size_ + m->size > total_size_) && is_active)
             mem_cv_.wait(mem_lock_);
@@ -106,9 +107,8 @@ void mem_pool_t::deallocate(mem_region_t* m) {
             return;
         mem_region_t *top_m = mem_q_.front();
         if (m->uid != top_m->uid) {
-            FATAL("Should deallocate the tail first. Only FIFO eviction allowed");
-            FATAL("Tried deleting " << m->uid << " but front element was " << top_m->uid);
             print_trace_();
+            FATAL("Should deallocate the tail first. Only FIFO eviction. Tried deleting " << m->uid << " but front element was " << top_m->uid);            
             return;
         }
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
@@ -129,15 +129,15 @@ void mem_pool_t::deallocate(mem_region_t* m) {
 
 void mem_pool_t::print_trace_() {
     try {
-        DBG("===================================================");
+        std::cout << "===================================================" << std::endl;
         for (size_t i = 0; i < mem_q_.size(); ++i) {
             const auto e = mem_q_[i];
-            DBG("UID: " << e->uid << " ptr: " << (void*)e->ptr << " start: " << e->file_start_offset << " end: " << e->file_start_offset+e->size);
+            std::cout << "UID: " << e->uid << " ptr: " << (void*)e->ptr << " start: " << e->file_start_offset << " end: " << e->file_start_offset+e->size << std::endl;
         }
         auto e = mem_q_.front();
-        DBG("First element " << e->uid << " ptr " << (void *)e->ptr << " at start offset " << e->file_start_offset);
-        DBG("Head " << head_ << ", Tail " << tail_);
-        DBG("===================================================");
+        std::cout <<  "First element " << e->uid << " ptr " << (void *)e->ptr << " at start offset " << e->file_start_offset << std::endl;
+        std::cout << "Head " << head_ << ", Tail " << tail_ << std::endl;
+        std::cout << "===================================================" << std::endl;
     } catch (std::exception &e) {
         FATAL("Exception caught in allocate print_trace_." << e.what());
     }

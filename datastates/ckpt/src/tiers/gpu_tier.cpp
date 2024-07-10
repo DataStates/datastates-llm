@@ -4,8 +4,7 @@ gpu_tier_t::gpu_tier_t(int gpu_id, unsigned int num_threads, size_t total_size):
     base_tier_t(GPU_TIER, gpu_id, num_threads, total_size) {
     assert((num_threads == 1) && "[GPU_TIER] Number of flush and fetch threads should be set to 1.");
     checkCuda(cudaSetDevice(gpu_id_));
-    checkCuda(cudaMalloc(&start_ptr_, total_size));
-    mem_pool = new mem_pool_t(start_ptr_, total_size, gpu_id);
+    mem_pool = new mem_pool_t<rmm::mr::cuda_memory_resource>(GPU_TIER, total_size, gpu_id);
     flush_thread_ = std::thread([&] { flush_io_(); });
     fetch_thread_ = std::thread([&] { fetch_io_(); });
     flush_thread_.detach();
@@ -41,14 +40,14 @@ void gpu_tier_t::flush_io_() {
         if (res == false || is_active == false)
             return;
         mem_region_t* src = flush_q.get_front();
-        DBG("In GPU tier got src...." << successor_tier_->tier_type_ );
+        DBG("In GPU tier got src...." << successor_tier_->tier_type_ << " for region " << src->uid << " at path " << src->path);
         mem_region_t* dest = new mem_region_t(src, successor_tier_->tier_type_);
-        DBG("In GPU tier got dest....");
-
-        successor_tier_->mem_pool->allocate(dest);
+        
+        successor_tier_->tier_allocate(dest);
+        DBG("In GPU tier allocated memory as .... " <<  (void*)dest->ptr << " of size " << dest->size);
         checkCuda(cudaMemcpyAsync(dest->ptr, src->ptr, src->size, cudaMemcpyDeviceToHost, flush_stream));
         checkCuda(cudaStreamSynchronize(flush_stream));
-        DBG("[GPU_TIER] Flushed from GPU to host.");
+        DBG("[GPU_TIER] Flushed from GPU to host region ID " << src->uid << " for path " << src->path);
         successor_tier_->flush(dest);
         mem_pool->deallocate(src);
         flush_q.pop();
@@ -72,3 +71,12 @@ void gpu_tier_t::fetch_io_() {
         fetch_q.pop();
     }
 }
+
+void gpu_tier_t::tier_allocate(mem_region_t* region) {
+    mem_pool->allocate(region);
+}
+
+void gpu_tier_t::tier_deallocate(mem_region_t* region) {
+    mem_pool->deallocate(region);
+}
+
