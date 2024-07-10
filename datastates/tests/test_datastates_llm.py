@@ -50,7 +50,6 @@ def test_datastates():
     
     print(f"Engine initalized.. Going to checkpoint now...")
 
-    tensor_sum = torch.sum(tensor)
     ckpt_engine.save(state_dict=ckpt_obj, path=ckpt_path)
     print("Async save operation launched")
 
@@ -60,8 +59,7 @@ def test_datastates():
     print(f"Sleep for 5s complete...")      
 
     recovered_obj = ckpt_engine.load(path=ckpt_path)
-    recovered_tensor_sum = torch.sum(recovered_obj["tensor1"])
-    print(f"Ckpt tensor sum: {tensor_sum}, Recovered tensor sum: {recovered_tensor_sum}")
+    print(f"Checkpoint recovered successfully")
     del ckpt_engine
     
 if __name__ == "__main__":

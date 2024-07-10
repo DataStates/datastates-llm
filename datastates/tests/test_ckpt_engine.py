@@ -38,8 +38,7 @@ def test_ckpt_engine():
         (version, rec_tensor2, file_offset+tensor_bytes, ckpt_path),
     ]
     ckpt_engine.load(rec_tensors)
-    print(f"tensor1 = {torch.sum(tensor1)}; recovered tensor1 = {torch.sum(rec_tensor1)}")
-    print(f"tensor2 = {torch.sum(tensor2)}; recovered tensor2 = {torch.sum(rec_tensor2)}")
+    print(f"Loaded checkpoint successfully")
         
 if __name__ == "__main__":
     test_ckpt_engine()

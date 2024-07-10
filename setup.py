@@ -29,7 +29,7 @@ setup(
     name="datastates",
     version="0.0.1",
     author="ANL",
-    packages=['datastates', 'datastates.utils', 'datastates.ckpt', 'datastates.llm', 'datastates.llm.deepspeed'],
+    packages=find_packages(),
     include_package_data=True,
     ext_modules=extensions,
     verbose=True,
