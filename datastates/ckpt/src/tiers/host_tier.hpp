@@ -6,7 +6,7 @@
 #include <filesystem>
 
 class host_tier_t : public base_tier_t {
-    mem_pool_t<rmm::mr::pinned_memory_resource>* mem_pool = nullptr;
+    mem_pool_t<rmm::mr::pinned_host_memory_resource>* mem_pool = nullptr;
 public:
     host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size);
     ~host_tier_t() {

@@ -14,7 +14,8 @@
 #include <rmm/detail/error.hpp>
 #include <rmm/device_buffer.hpp>
 #include <rmm/mr/device/pool_memory_resource.hpp>
-#include <rmm/mr/host/pinned_memory_resource.hpp>
+#include <rmm/mr/pinned_host_memory_resource.hpp>
+
 
 template <typename T>
 class mem_pool_t {
@@ -31,7 +32,7 @@ class mem_pool_t {
 public:
     mem_pool_t(TIER_TYPES tier_type, size_t total_size, int rank=-1): tier_type_(tier_type), total_size_(total_size), rank_(rank) {
         try {
-            T mr_rmm{};
+            T* mr_rmm = new T();
             pool_mr = new rmm::mr::pool_memory_resource<T>(mr_rmm, total_size, total_size);
             is_active = true;
             DBG("Returned from the memory pool function");

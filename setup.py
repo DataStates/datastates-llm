@@ -1,10 +1,14 @@
 from setuptools import setup, find_packages
 import pathlib
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
-
+import os
 
 # Define CPP/CUDA extensions for the checkpointing engine.
 ckpt_engine_path = "datastates/ckpt/src/"
+conda_prefix = os.getenv('CONDA_PREFIX', '')
+cuda_home = os.getenv('CUDA_HOME', "")
+if not cuda_home:
+    cuda_home = os.getenv('CUDA_PATH', "")
 abs_ckpt_engine_path=pathlib.Path(f"{pathlib.Path(__file__).parent.resolve()}/{ckpt_engine_path}")
 cmake_flags = [
     "FMT_HEADER_ONLY=1",
@@ -27,10 +31,10 @@ extensions = [
                       f"{abs_ckpt_engine_path}/pool", 
                       f"{abs_ckpt_engine_path}/tiers", 
                       f"{abs_ckpt_engine_path}",
-                      '/soft/compilers/cuda/cuda-12.2.2/include',
-                      '/home/amaurya/.conda/envs/dspeed_env/include/rapids',
-                      '/home/amaurya/.conda/envs/dspeed_env/include/rapids/libcudacxx',
-                      '/home/amaurya/.conda/envs/dspeed_env/include'                      
+                      f'{cuda_home}/include',
+                      f'{conda_prefix}/include/rapids',
+                      f'{conda_prefix}/include/rapids/libcudacxx',
+                      f'{conda_prefix}/include'                      
                       ],
         extra_compile_args={'cxx': ['-g', '-fvisibility=hidden', '-std=c++17', '-Wall', '-O0','-Wno-reorder'] + rmm_flags, 
                             'nvcc': ['-Wall', '-O0', '-std=c++17', '--expt-extended-lambda', '-arch=sm_80'] + rmm_flags }, 

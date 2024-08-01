@@ -4,7 +4,7 @@ host_tier_t::host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size
     base_tier_t(HOST_PINNED_TIER, gpu_id, num_threads, total_size) {
     assert((num_threads == 1) && "[HOST_TIER] Number of flush and fetch threads should be set to 1.");
     checkCuda(cudaSetDevice(gpu_id_));
-    mem_pool = new mem_pool_t<rmm::mr::pinned_memory_resource>(HOST_PINNED_TIER, total_size, gpu_id);
+    mem_pool = new mem_pool_t<rmm::mr::pinned_host_memory_resource>(HOST_PINNED_TIER, total_size, gpu_id);
     flush_thread_ = std::thread([&] { flush_io_(); });
     fetch_thread_ = std::thread([&] { fetch_io_(); });
     flush_thread_.detach();

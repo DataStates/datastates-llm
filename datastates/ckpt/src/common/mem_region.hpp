@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <deque>
 #include "defs.hpp"
+#include <cstdint>
 
 
 struct mem_region_t {
