@@ -29,7 +29,7 @@ setup(
     name="datastates",
     version="0.0.1",
     author="ANL",
-    packages=find_packages(),
+    packages=find_packages(include=['datastates', 'datastates.*']),
     include_package_data=True,
     ext_modules=extensions,
     verbose=True,

@@ -151,10 +151,13 @@ class Checkpointing:
                     if dest != f"TENSOR{KEY_SEPARATOR}{k}":
                         raise Exception(f"[DataStates.llm] The key in header {k} does not match key at location {dest}")
 
-                    tensor_restored = torch.zeros(size=tuple(shape), dtype=getattr(torch, dtype))
-                    restore_list.append((version, tensor_restored, start_offset, path))
+                    # tensor_restored = torch.zeros(size=tuple(shape), dtype=getattr(torch, dtype))
+                    # restore_list.append((version, tensor_restored, start_offset, path))
+                    f.seek(start_offset)
+                    buffer = f.read(end_offset-start_offset)
+                    tensor_restored = torch.frombuffer(buffer, dtype=getattr(torch, dtype)).reshape(tuple(shape))
                     pre_dest[sub_k] = tensor_restored
-                self.ckpt_engine.load(restore_list)
+                # self.ckpt_engine.load(restore_list)
             except Exception as exc:
                 raise Exception(f"[DataStates.llm] Got error with tensor loading {dtype}, {shape}, {exc}")
             self.logger.info(f"[DataStates.llm] Loaded checkpoint from {path}.")
@@ -173,7 +176,7 @@ class Checkpointing:
         try:
             t = time.time()
             self.ckpt_engine.wait()
-            self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
+            # self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")
             sys.exit(-1)

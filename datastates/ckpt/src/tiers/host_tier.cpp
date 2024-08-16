@@ -63,19 +63,23 @@ void host_tier_t::flush_io_() {
 void host_tier_t::fetch_io_() {
     checkCuda(cudaSetDevice(gpu_id_));
     while(is_active) {
-        bool res = fetch_q.wait_for_item();
-        if (res == false || is_active == false)
-            return;
-        mem_region_t* src = fetch_q.get_front();
-        DBG("Starting to fetch in background thread right now....");
-        assert((src->ptr != nullptr) && "[HOST_TIER] Memory not allocated for fetching.");
-                
-        std::ifstream f;            
-        f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-        f.open(src->path, std::ios::in | std::ios::binary);
-        f.seekg(src->file_start_offset);
-        f.read(src->ptr, src->size);
-        f.close();
-        fetch_q.pop();
+        try {
+            bool res = fetch_q.wait_for_item();
+            if (res == false || is_active == false)
+                return;
+            mem_region_t* src = fetch_q.get_front();
+            DBG("Starting to fetch in background thread right now " << src->path << " from offset " << src->file_start_offset << " of size " << src->size);
+            assert((src->ptr != nullptr) && "[HOST_TIER] Memory not allocated for fetching.");
+                    
+            std::ifstream f;            
+            f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+            f.open(src->path, std::ios::in | std::ios::binary);
+            f.seekg(src->file_start_offset);
+            f.read(src->ptr, src->size);
+            f.close();
+            fetch_q.pop();
+        } catch (const std::exception& ex) {
+            FATAL("[HostFetch] Got exception " << ex.what());
+        }
     }
 }

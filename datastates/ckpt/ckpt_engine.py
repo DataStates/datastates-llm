@@ -2,6 +2,7 @@ from datastates.ckpt.src import handle as datastates_handle
 import torch
 import time
 import sys
+import os
 from datastates.utils import get_logger
 
 # Acts as a Python Interfact to manage the CPP checkpoint engine
@@ -32,9 +33,12 @@ class CkptEngine:
         try:
             for t in tensors:
                 version, tensor, file_offset, path = t
+                file_size = os.path.getsize(path)
                 tensor_bytes = tensor.numel()*tensor.element_size()
                 assert tensor_bytes > 0, "Tensor size should be > 0"
+                assert file_offset + tensor_bytes <= file_size, f"Tensor at offset {file_offset} overflows file size {file_size}"
                 self.ckpt_engine.restore_tensor(version, tensor, tensor_bytes, file_offset, path)
+                self.logger.info(f"[Datastates.ckpt] Restored tensor {tensor_bytes} from {file_offset}")
         except Exception as exc:
             self.logger.error(f"[DataStates.ckpt][ERROR][load] {exc}")
             sys.exit(-1)
