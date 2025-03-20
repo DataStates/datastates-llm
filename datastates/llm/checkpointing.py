@@ -154,7 +154,9 @@ class Checkpointing:
                     # tensor_restored = torch.zeros(size=tuple(shape), dtype=getattr(torch, dtype))
                     # restore_list.append((version, tensor_restored, start_offset, path))
                     f.seek(start_offset)
-                    buffer = f.read(end_offset-start_offset)
+                    buffer_size = end_offset - start_offset
+                    buffer = bytearray(buffer_size)  # Preallocate a writable buffer
+                    f.readinto(buffer)  # Read directly into the preallocated buffer
                     tensor_restored = torch.frombuffer(buffer, dtype=getattr(torch, dtype)).reshape(tuple(shape))
                     pre_dest[sub_k] = tensor_restored
                 # self.ckpt_engine.load(restore_list)
