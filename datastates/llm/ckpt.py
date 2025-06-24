@@ -9,14 +9,14 @@ import pickle
 import json
 import ctypes
 import numpy as np
-from datastates.ckpt import CkptEngine
+import datastates_core
 from .helper import parse_config, get_checkpoint_version, HOST_CACHE_SIZE, CKPT_PARSER_THREADS
-from datastates.utils import get_logger
+from .utils import get_logger
 
 SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
 
-class Checkpointing:
+class DStatesLLM:
     def __init__(self, runtime_config={}, rank=0) -> None:
         try:
             if not torch.cuda.is_available():
@@ -27,7 +27,7 @@ class Checkpointing:
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
-            self.ckpt_engine = CkptEngine(host_cache_size, cuda_device, self.rank)   
+            self.ckpt_engine = datastates_core.handle(host_cache_size, cuda_device, self.rank)
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.logger = get_logger(__name__)
             self.last_ckpt_version = -1
@@ -86,11 +86,10 @@ class Checkpointing:
             metadata_size = len(header_size) + len(header)
             
             # Launch Async copies
-            async_ckpt_list = []
             for _, v in async_copies.items():
                 v["file_offset"] += metadata_size
-                async_ckpt_list.append((version, v["tensor"], v["file_offset"], path))
-            self.ckpt_engine.async_save(async_ckpt_list)
+                tensor_bytes = v["tensor"].numel()*v["tensor"].element_size()
+                self.ckpt_engine.ckpt(version, v["tensor"], tensor_bytes, v["file_offset"], path)
 
             with open(path, 'wb') as f:
                 f.seek(0)

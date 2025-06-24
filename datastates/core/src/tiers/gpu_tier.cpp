@@ -18,14 +18,14 @@ gpu_tier_t::gpu_tier_t(int gpu_id, unsigned int num_threads, size_t total_size):
 void gpu_tier_t::flush(mem_region_t *m) {
     assert((successor_tier_ != nullptr) && "[GPU_TIER] Successor tier is not set.");
     assert((m->curr_tier_type == GPU_TIER) && "[GPU_TIER] Source to flush from should be a gpu memory type.");
-    assert((successor_tier_->tier_type == HOST_PINNED_TIER) && "[GPU_TIER] Only flush from gpu to pinned host memory is supported.");
+    assert((successor_tier_->tier_type_ == HOST_PINNED_TIER) && "[GPU_TIER] Only flush from gpu to pinned host memory is supported.");
     flush_q.push(m);
 }
 
 void gpu_tier_t::fetch(mem_region_t *m) {
     assert((successor_tier_ != nullptr) && "[GPU_TIER] Successor tier is not set.");
     assert((m->curr_tier_type == HOST_PINNED_TIER) && "[GPU_TIER] Only fetch from pinned host memory to gpu supported.");
-    assert((successor_tier_->tier_type == HOST_PINNED_TIER) && "[GPU_TIER] Only fetch from pinned host memory to gpu supported.");
+    assert((successor_tier_->tier_type_ == HOST_PINNED_TIER) && "[GPU_TIER] Only fetch from pinned host memory to gpu supported.");
     fetch_q.push(m);
 }
 
@@ -46,7 +46,7 @@ void gpu_tier_t::flush_io_() {
         DBG("In GPU tier got dest....");
 
         successor_tier_->mem_pool->allocate(dest);
-        checkCuda(cudaMemcpyAsync(dest->ptr, src->ptr, src->size, cudaMemcpyDeviceToHost, flush_stream));
+        checkCuda(cudaMemcpyAsync(const_cast<void*>(static_cast<const void*>(dest->ptr)), static_cast<const void*>(src->ptr), src->size, cudaMemcpyDeviceToHost, flush_stream));
         checkCuda(cudaStreamSynchronize(flush_stream));
         DBG("[GPU_TIER] Flushed from GPU to host.");
         successor_tier_->flush(dest);
@@ -66,7 +66,7 @@ void gpu_tier_t::fetch_io_() {
         
         if (mem_pool->get_capacity()) {
             mem_pool->allocate(dest);
-            checkCuda(cudaMemcpyAsync(dest->ptr, src->ptr, src->size, cudaMemcpyHostToDevice, fetch_stream));
+            checkCuda(cudaMemcpyAsync(const_cast<void*>(static_cast<const void*>(dest->ptr)), static_cast<const void*>(src->ptr), src->size, cudaMemcpyHostToDevice, fetch_stream));
             checkCuda(cudaStreamSynchronize(fetch_stream));
         }
         fetch_q.pop();

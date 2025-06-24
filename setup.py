@@ -1,43 +1,58 @@
-from setuptools import setup, find_packages
+from setuptools import setup, Extension, find_packages
 import pathlib
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+import glob
+import os
+import sys
+import subprocess
+from setuptools.command.build_ext import build_ext
+
+# Discover the shared object built by CMake manually
+# datastates_ckpt_so = glob.glob("datastates/ckpt/*.so") + glob.glob("datastates/ckpt/*.pyd")
+
+# Custom build class to run CMake
+class CMakeBuild(build_ext):
+    def run(self):
+        # Make sure CMake is installed
+        try:
+            subprocess.check_output(['cmake', '--version'])
+        except OSError:
+            raise RuntimeError("CMake is required to build this project.")
+
+        for ext in self.extensions:
+            self.build_cmake(ext)
+
+    def build_cmake(self, ext):
+        # Path setup
+        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
+        cmake_args = [
+            f'-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}',
+            f'-DPYTHON_EXECUTABLE={sys.executable}',
+        ]
+
+        build_args = ['--config', 'Release', '--', f'-j{os.cpu_count()}']
+
+        build_temp = pathlib.Path(self.build_temp)
+        build_temp.mkdir(parents=True, exist_ok=True)
+
+        # Run CMake configure + build
+        subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, cwd=build_temp)
+        subprocess.check_call(['cmake', '--build', '.'] + build_args, cwd=build_temp)
+
+# Dummy Extension that just points to the CMake root
+class CMakeExtension(Extension):
+    def __init__(self, name, sourcedir=''):
+        super().__init__(name, sources=[])
+        self.sourcedir = os.path.abspath(sourcedir)
 
 
-# Define CPP/CUDA extensions for the checkpointing engine.
-ckpt_engine_path = "datastates/ckpt/src/"
-abs_ckpt_engine_path=pathlib.Path(f"{pathlib.Path(__file__).parent.resolve()}/{ckpt_engine_path}")
-extensions = [
-    CUDAExtension(
-        name=f"datastates.ckpt.src",
-        sources=[f'{ckpt_engine_path}/pool/mem_pool.cpp', 
-                    f'{ckpt_engine_path}/tiers/gpu_tier.cpp', 
-                    f'{ckpt_engine_path}/tiers/host_tier.cpp', 
-                    f'{ckpt_engine_path}/engine.cpp', 
-                    f'{ckpt_engine_path}/py_datastates_llm.cpp'],
-        include_dirs=[f"{abs_ckpt_engine_path}/common", 
-                      f"{abs_ckpt_engine_path}/pool", 
-                      f"{abs_ckpt_engine_path}/tiers", 
-                      f"{abs_ckpt_engine_path}"],
-        extra_compile_args={'cxx': ['-g', '-fvisibility=hidden'], 'nvcc': ['-O2'] } 
-        # Need fvisibility for smaller binaries: 
-        # https://pybind11.readthedocs.io/en/stable/faq.html#how-can-i-create-smaller-binaries
-    )    
-]
-
-# ---- Install CPP/CUDA checkpointing engine and expose Python bindings
 setup(
     name="datastates",
     version="0.0.1",
     author="ANL",
-    # packages=find_packages(include=['datastates', 'datastates.*']),
-    packages = ['datastates', 'datastates.utils', 'datastates.ckpt', 'datastates.llm', 'datastates.llm.deepspeed'],
+    packages=find_packages(include=['datastates', 'datastates.*']),
     include_package_data=True,
-    ext_modules=extensions,
-    verbose=True,
     description="Datastates-LLM checkpointing engine",
-    long_description=open("README.md").read() if pathlib.Path("README.md").exists() else "",
-    install_requires=["pybind11", "torch"],
-    cmdclass={
-        'build_ext': BuildExtension
-    }    
+    install_requires=["nanobind", "torch"],
+    cmdclass={'build_ext': CMakeBuild},
+
 )

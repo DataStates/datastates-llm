@@ -16,14 +16,13 @@ host_tier_t::host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size
 void host_tier_t::flush(mem_region_t *src) {
     assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
     assert((src->curr_tier_type == HOST_PINNED_TIER) && "[HOST_TIER] Source to flush from should be a host memory type.");
-    assert((successor_tier_->tier_type == FILE_TIER) && "[HOST_TIER] Only flush from host to file supported.");
+    assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only flush from host to file supported.");
     flush_q.push(src);
 }
 
 void host_tier_t::fetch(mem_region_t *src) {
-    // assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
-    // assert((src->curr_tier_type == FILE_TIER) && "[HOST_TIER] Only fetch from file to host supported.");
-    // assert((successor_tier_->tier_type == FILE_TIER) && "[HOST_TIER] Only fetch from file to host supported.");
+    assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
+    assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only fetch from file to host supported.");
     fetch_q.push(src);
 }
 
@@ -49,7 +48,7 @@ void host_tier_t::flush_io_() {
             f.exceptions(std::ofstream::failbit | std::ofstream::badbit);
             f.open(src->path, std::ios::in | std::ios::out | std::ios::binary);
             f.seekp(src->file_start_offset);
-            f.write(src->ptr, src->size);
+            f.write(const_cast<char*>(src->ptr), src->size);
             f.flush();      // This is for consistency guarantee.
             f.close();
             mem_pool->deallocate(src);
@@ -75,7 +74,7 @@ void host_tier_t::fetch_io_() {
             f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
             f.open(src->path, std::ios::in | std::ios::binary);
             f.seekg(src->file_start_offset);
-            f.read(src->ptr, src->size);
+            f.read(const_cast<char*>(src->ptr), src->size);
             f.close();
             fetch_q.pop();
         } catch (const std::exception& ex) {

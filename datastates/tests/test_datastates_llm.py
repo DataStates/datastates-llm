@@ -1,5 +1,5 @@
 import torch
-from datastates.llm import Checkpointing
+from datastates.llm import DStatesLLM
 import numpy as np
 import time
 
@@ -25,7 +25,7 @@ class DeepSpeedConfig:
 def test_datastates():
     deepspeed_config = DeepSpeedConfig()
     print(f"Going to initalize datastates engine...")
-    ckpt_engine = Checkpointing(runtime_config=deepspeed_config, rank=0)
+    ckpt_engine = DStatesLLM(runtime_config=deepspeed_config, rank=0)
     device = torch.device("cpu")    
     if torch.cuda.is_available():
         print(f"Found {torch.cuda.device_count()} CUDA devices")
@@ -34,6 +34,7 @@ def test_datastates():
     tensor_shape = torch.Size([256, 256])
     tensor_dtype = torch.float32
     tensor = torch.randn(tensor_shape, dtype=tensor_dtype).to(device)
+    tensor2 = torch.randn(tensor_shape, dtype=tensor_dtype).to(device)
     
     model_name = "datastates_test_model"
     np_array = np.random.randn(512).astype(np.float32)
@@ -41,6 +42,7 @@ def test_datastates():
     
     ckpt_obj = {
         "tensor1": tensor,
+        "tensor2": tensor2,
         "model_name": model_name,
         "rng_iterator": 12345,
         "dtype": tensor_dtype,
@@ -51,6 +53,7 @@ def test_datastates():
     print(f"Engine initalized.. Going to checkpoint now...")
 
     ckpt_engine.save(state_dict=ckpt_obj, path=ckpt_path)
+    print("Checkpointing tensor of sum: ", torch.sum(ckpt_obj["tensor1"]), torch.sum(ckpt_obj["tensor2"]))
     print("Async save operation launched")
 
     ckpt_engine.wait()
@@ -59,7 +62,8 @@ def test_datastates():
     print(f"Sleep for 5s complete...")      
 
     recovered_obj = ckpt_engine.load(path=ckpt_path)
-    print(f"Checkpoint recovered successfully")
+    print("Recovering tensor of sum: ", torch.sum(recovered_obj["tensor1"]), torch.sum(recovered_obj["tensor2"]))
+    print(f"Checkpoint recovered successfully (note that sums maybe slightly different due to floating point precision)")
     del ckpt_engine
     
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ def parse_ds_config(config):
     # NVMe or CPU offloading of params, optimizer, universal checkpoint loading, etc.
     if hasattr(config, "zero_config") and hasattr(config.zero_config, "offload_param") and config.zero_config.offload_param is not None:
         assert config.zero_config.offload_param.device in (None, "none"), "CPU or NVMe offloaded parameter checkpointing is not yet supported/tested"
-    if hasattr(config, "zero_config") and hasattr(config.zero_config, "offload_optimizer") and config.zero_config.offload_optimizer is not None:
-        assert config.zero_config.offload_optimizer.device in (None, "none"), "CPU or NVMe offloaded optimizer checkpointing is not yet supported/tested"
+    # if hasattr(config, "zero_config") and hasattr(config.zero_config, "offload_optimizer") and config.zero_config.offload_optimizer is not None:
+    #     assert config.zero_config.offload_optimizer.device in (None, "none"), "CPU or NVMe offloaded optimizer checkpointing is not yet supported/tested"
     if hasattr(config, "load_universal_checkpoint") and config.load_universal_checkpoint is not None:
         assert config.load_universal_checkpoint is False, "Universal checkpointing loading is not yet supported/tested"  
     
