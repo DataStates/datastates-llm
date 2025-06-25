@@ -1,5 +1,5 @@
 import torch
-from datastates_core import dstates_engine
+from datastates.datastates_core import dstates_engine
 import time
 
 def test_ckpt_engine():
