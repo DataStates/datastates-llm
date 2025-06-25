@@ -30,7 +30,7 @@ cmake -B build -DCMAKE_INSTALL_PREFIX="$INSTALL_PATH" -DBUILD_PYTHON_BINDINGS=OF
 cmake --build build -j$(nproc)
 cmake --install build
 # Test using a simple code.
-$INSTALL_PATH/test/test_core_engine
+$INSTALL_PATH/datastates/test/test_core_engine
 ```
 
 
