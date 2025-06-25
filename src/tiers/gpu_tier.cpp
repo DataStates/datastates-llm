@@ -5,7 +5,7 @@ gpu_tier_t::gpu_tier_t(int gpu_id, unsigned int num_threads, size_t total_size):
     assert((num_threads == 1) && "[GPU_TIER] Number of flush and fetch threads should be set to 1.");
     checkCuda(cudaSetDevice(gpu_id_));
     checkCuda(cudaMalloc(&start_ptr_, total_size));
-    mem_pool = new mem_pool_t(start_ptr_, total_size, gpu_id);
+    mem_pool = new mem_pool_t(start_ptr_, total_size, gpu_id, GPU_TIER);
     flush_thread_ = std::thread([&] { flush_io_(); });
     fetch_thread_ = std::thread([&] { fetch_io_(); });
     flush_thread_.detach();
@@ -43,8 +43,6 @@ void gpu_tier_t::flush_io_() {
         mem_region_t* src = flush_q.get_front();
         DBG("In GPU tier got src...." << successor_tier_->tier_type_ );
         mem_region_t* dest = new mem_region_t(src, successor_tier_->tier_type_);
-        DBG("In GPU tier got dest....");
-
         successor_tier_->mem_pool->allocate(dest);
         checkCuda(cudaMemcpyAsync(const_cast<void*>(static_cast<const void*>(dest->ptr)), static_cast<const void*>(src->ptr), src->size, cudaMemcpyDeviceToHost, flush_stream));
         checkCuda(cudaStreamSynchronize(flush_stream));

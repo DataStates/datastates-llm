@@ -5,7 +5,7 @@ host_tier_t::host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size
     assert((num_threads == 1) && "[HOST_TIER] Number of flush and fetch threads should be set to 1.");
     checkCuda(cudaSetDevice(gpu_id_));
     checkCuda(cudaMallocHost(&start_ptr_, total_size));
-    mem_pool = new mem_pool_t(start_ptr_, total_size, gpu_id);
+    mem_pool = new mem_pool_t(start_ptr_, total_size, gpu_id, HOST_PINNED_TIER);
     flush_thread_ = std::thread([&] { flush_io_(); });
     fetch_thread_ = std::thread([&] { fetch_io_(); });
     flush_thread_.detach();
@@ -24,6 +24,7 @@ void host_tier_t::fetch(mem_region_t *src) {
     assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
     assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only fetch from file to host supported.");
     fetch_q.push(src);
+    fetch_q.wait_for_completion();
 }
 
 void host_tier_t::wait_for_completion() {

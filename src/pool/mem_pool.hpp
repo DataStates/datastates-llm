@@ -29,7 +29,7 @@ class mem_pool_t {
     void print_trace_();
     void assign_(mem_region_t* m);
 public:
-    mem_pool_t(char* start_ptr, size_t total_size, int rank=-1);
+    mem_pool_t(char* start_ptr, size_t total_size, int rank=-1, TIER_TYPES device_type = HOST_PINNED_TIER);
     ~mem_pool_t();    
     void allocate(mem_region_t* m);
     size_t get_free_size();

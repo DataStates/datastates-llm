@@ -1,6 +1,6 @@
 #ifndef __DATASTATES_DEFS_HPP
 #define __DATASTATES_DEFS_HPP
-
+typedef unsigned int uint;
 enum TIER_TYPES: int {
     HOST_UNPINNED_TIER=0,               // cudaMemoryTypeUnregistered = 0
     HOST_PINNED_TIER=1,                 // cudaMemoryTypeHost = 1

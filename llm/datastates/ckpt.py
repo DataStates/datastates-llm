@@ -9,14 +9,14 @@ import pickle
 import json
 import ctypes
 import numpy as np
-import datastates_core
+from datastates.datastates_core import dstates_engine
 from .helper import parse_config, get_checkpoint_version, HOST_CACHE_SIZE, CKPT_PARSER_THREADS
 from .utils import get_logger
 
 SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
 
-class DStatesLLM:
+class CheckpointEngine:
     def __init__(self, runtime_config={}, rank=0) -> None:
         try:
             if not torch.cuda.is_available():
@@ -27,7 +27,7 @@ class DStatesLLM:
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
-            self.ckpt_engine = datastates_core.handle(host_cache_size, cuda_device, self.rank)
+            self.ckpt_engine = dstates_engine(host_cache_size, cuda_device, self.rank)
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.logger = get_logger(__name__)
             self.last_ckpt_version = -1
@@ -86,10 +86,11 @@ class DStatesLLM:
             metadata_size = len(header_size) + len(header)
             
             # Launch Async copies
-            for _, v in async_copies.items():
+            for i, (_, v) in enumerate(async_copies.items()):
                 v["file_offset"] += metadata_size
                 tensor_bytes = v["tensor"].numel()*v["tensor"].element_size()
-                self.ckpt_engine.ckpt(version, v["tensor"], tensor_bytes, v["file_offset"], path)
+                print("Checkpointing now region ", i)
+                self.ckpt_engine.ckpt(version, i, v["tensor"], tensor_bytes, v["file_offset"], path)
 
             with open(path, 'wb') as f:
                 f.seek(0)
@@ -161,7 +162,7 @@ class DStatesLLM:
                 # self.ckpt_engine.load(restore_list)
             except Exception as exc:
                 raise Exception(f"[DataStates.llm] Got error with tensor loading {dtype}, {shape}, {exc}")
-            self.logger.info(f"[DataStates.llm] Loaded checkpoint from {path}.")
+            # self.logger.info(f"[DataStates.llm] Loaded checkpoint from {path}.")
             return data
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] Could not load {path}, exception: {exc}")
@@ -173,10 +174,10 @@ class DStatesLLM:
         self.last_ckpt_version += 1
         return True
 
-    def wait(self):
+    def wait(self, persist=False):
         try:
             t = time.time()
-            self.ckpt_engine.wait()
+            self.ckpt_engine.wait(persist)
             # self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")

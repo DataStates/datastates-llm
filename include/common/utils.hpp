@@ -2,6 +2,7 @@
 #define __DATASTATES_UTILS_HPP
 #include <iostream>
 #include <cuda_runtime.h>
+#include <mutex>
 #include <chrono>
 
 #define checkCuda(ans) { checkCudaFunc((ans), __FILE__, __LINE__); }
@@ -11,7 +12,20 @@ inline void checkCudaFunc(cudaError_t code, const char *file, int line, bool abo
       if (abort) exit(code);
    }
 }
-#define MESSAGE(level, message) std::cout << "[" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__ << "] " << message << std::endl
+
+
+// Global logging mutex
+inline std::mutex& log_mutex() {
+    static std::mutex mtx;
+    return mtx;
+}
+#define MESSAGE(level, message) \
+{ \
+    std::lock_guard<std::mutex> lock(log_mutex()); \
+    std::cout << "[" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__ << "] " << message << std::endl; \
+}
+
+// #define MESSAGE(level, message) std::cout << "[" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__ << "] " << message << std::endl
 // #define MESSAGE(level, message) py::print("[", __FILE__, ":", __LINE__, ":", __FUNCTION__, "] ", message)
 #define FATAL(message) {\
     MESSAGE("FATAL", message);\

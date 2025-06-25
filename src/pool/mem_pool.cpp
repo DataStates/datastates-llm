@@ -1,13 +1,15 @@
 #include "mem_pool.hpp"
 
-mem_pool_t::mem_pool_t(char* start_ptr, size_t total_size, int rank): start_ptr_(start_ptr), 
-    total_size_(total_size), rank_(rank) {
+mem_pool_t::mem_pool_t(char* start_ptr, size_t total_size, int rank, TIER_TYPES device_type): start_ptr_(start_ptr), 
+    total_size_(total_size), rank_(rank), device_type_(device_type) {
     try {
         cudaPointerAttributes attributes;
         checkCuda(cudaPointerGetAttributes (&attributes, start_ptr_));
-        device_type_ = attributes.type;
+        if (device_type_ != attributes.type) {
+            FATAL("The device type of the memory pool " << device_type_ << " does not match the pointer type " << attributes.type);
+        }
         is_active = true;
-        DBG("Returned from the memory pool function");
+        DBG("Returned from the memory pool function on tier " << device_type_);
     } catch (std::exception &e) {
         FATAL("Exception caught in memory pool constructor." << e.what());
     }
@@ -20,7 +22,7 @@ mem_pool_t::~mem_pool_t() {
         mem_q_.clear();
         return;
     } catch (std::exception &e) {
-        FATAL("Exception caught in memory pool destructor." << e.what());
+        FATAL("Exception caught in memory pool destructor." << e.what() << " on tier " << device_type_);
     }
 }
 
@@ -35,7 +37,7 @@ size_t mem_pool_t::get_capacity() {
 void mem_pool_t::assign_(mem_region_t* m) {
     try {
         if (head_+m->size > total_size_) 
-            FATAL("Exception in assign: exceeding total memory size");
+            FATAL("Exception in assign: exceeding total memory size on tier " << device_type_);
         m->ptr = start_ptr_ + head_;
         head_ += m->size;
         if (head_ > total_size_)
@@ -43,7 +45,7 @@ void mem_pool_t::assign_(mem_region_t* m) {
         curr_size_ += m->size;
         alloc_map_[m->uid] = m->size;
         mem_q_.push_back(m);
-        DBG("[" << rank_ << "]" << "Assigned " << m->uid << " of size " << m->size << " curr size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
+        DBG("[" << rank_ << "]" << "Assigned " << m->uid << " of size " << m->size << " curr size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
     } catch (std::exception &e) {
         FATAL("Exception caught in assign_." << e.what());
     }
@@ -52,7 +54,7 @@ void mem_pool_t::assign_(mem_region_t* m) {
 void mem_pool_t::allocate(mem_region_t* m) {
     try {
         if (m->size > total_size_) 
-            FATAL("[" << rank_ << "]" <<"Cannot allocate size " << m->size << " larger than the pool of " << total_size_);
+            FATAL("[" << rank_ << "]" <<"Cannot allocate size " << m->size << " larger than the pool of " << total_size_ << " on tier " << device_type_);
         m->ptr = nullptr;
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
         while((curr_size_ + m->size > total_size_) && is_active)
@@ -92,7 +94,7 @@ void mem_pool_t::allocate(mem_region_t* m) {
         }
         mem_lock_.unlock();
         mem_cv_.notify_all();
-        DBG("[" << rank_ << "]" << "Allocated for " << m->uid << " of size " << m->size << " when current memory is " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
+        DBG("[" << rank_ << "]" << "Allocated for " << m->uid << " of size " << m->size << " when current memory is " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
     } catch (std::exception &e) {
         FATAL("Exception caught in allocate function." << e.what());
     }
@@ -100,17 +102,18 @@ void mem_pool_t::allocate(mem_region_t* m) {
 
 void mem_pool_t::deallocate(mem_region_t* m) {
     try {
+        DBG("[" << rank_ << "]" << "Going to deallocate " << m->uid << " of size " << m->size << " on tier " << device_type_);
         if (get_capacity() <= 0 || alloc_map_.find(m->uid) == alloc_map_.end())
             return;
-        if (mem_q_.empty() || m->uid < 1)
+        if (mem_q_.empty() || m->uid < 0)
             return;
         mem_region_t *top_m = mem_q_.front();
         if (alloc_map_[m->uid] != m->size) {
-            FATAL("The size allocated from the pool " << alloc_map_[m->uid] << " is different than the original size of tensor " << m->size);
+            FATAL("The size allocated from the pool " << alloc_map_[m->uid] << " is different than the original size of tensor " << m->size << " on tier " << device_type_);
         }
         if (m->uid != top_m->uid) {
             print_trace_();
-            FATAL("Should deallocate the tail first. Only FIFO eviction allowed. Tried deleting " << m->uid << " but front element was " << top_m->uid);            
+            FATAL("Should deallocate the tail first. Only FIFO eviction allowed. Tried deleting " << m->uid << " but front element was " << top_m->uid << " on tier " << device_type_);            
             return;
         }
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
@@ -121,7 +124,7 @@ void mem_pool_t::deallocate(mem_region_t* m) {
         if (curr_size_ == 0)
             head_ = tail_ = 0;
         alloc_map_.erase(m->uid);
-        DBG("[" << rank_ << "]" << "deallocated " << m->uid << " of size " << m->size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_);
+        DBG("[" << rank_ << "]" << "deallocated " << m->uid << " of size " << m->size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
         mem_q_.pop_front();
         mem_lock_.unlock();
         mem_cv_.notify_all();
@@ -139,7 +142,7 @@ void mem_pool_t::print_trace_() {
         }
         auto e = mem_q_.front();
         DBG("First element " << e->uid << " ptr " << (void *)e->ptr << " at start offset " << e->file_start_offset);
-        DBG("Head " << head_ << ", Tail " << tail_);
+        DBG("Head " << head_ << ", Tail " << tail_ << " On tier " << device_type_);
         DBG("===================================================");
     } catch (std::exception &e) {
         FATAL("Exception caught in allocate print_trace_." << e.what());
