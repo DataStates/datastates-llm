@@ -8,6 +8,7 @@ find_package(CUDAToolkit REQUIRED)
 if(BUILD_PYTHON_BINDINGS)
     find_package(Python 3.8 COMPONENTS Interpreter Development REQUIRED)
     find_package(nanobind CONFIG REQUIRED HINTS ${Python_SITELIB}/nanobind)
+    find_package(vlcc_states REQUIRED HINTS ${Python_SITELIB}/vlcc_states)
 endif()
 
 include_directories(
