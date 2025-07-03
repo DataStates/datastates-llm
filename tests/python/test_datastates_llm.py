@@ -1,7 +1,8 @@
 import torch
-from datastates import CheckpointEngine 
+from datastates import CheckpointEngine as CheckpointEngine
 import numpy as np
 import time
+import os
 
 # We need to test the way deepspeed checkpointing config is setup
 # The DeepSpeed config, along with other params such as 
@@ -31,10 +32,10 @@ def test_datastates():
         print(f"Found {torch.cuda.device_count()} CUDA devices")
         device = torch.device("cuda:0")
     
-    tensor_shape = torch.Size([256, 256])
+    tensor_shape = torch.Size([25600, 2560])
     tensor_dtype = torch.float32
     tensor = torch.randn(tensor_shape, dtype=tensor_dtype).to(device)
-    tensor2 = torch.randn(tensor_shape, dtype=tensor_dtype).to(device)
+    tensor2 = torch.randn(tensor_shape, dtype=tensor_dtype).to('cpu').pin_memory()
     
     model_name = "datastates_test_model"
     np_array = np.random.randn(512).astype(np.float32)
@@ -47,16 +48,21 @@ def test_datastates():
         "rng_iterator": 12345,
         "dtype": tensor_dtype,
         "shape": tensor_shape,
-        "random_np_obj": np_array
+        "random_np_obj": np_array,
+        "test_string": "this is a random test string"*100,
     }
     
     print(f"Engine initalized.. Going to checkpoint now...")
-
+    start_time = time.time()
     ckpt_engine.save(state_dict=ckpt_obj, path=ckpt_path)
-    print("Checkpointing tensor of sum: ", torch.sum(ckpt_obj["tensor1"]), torch.sum(ckpt_obj["tensor2"]))
-    print("Async save operation launched")
+    end_time = time.time()
+    print("Checkpointing in time ", end_time-start_time, " tensor of sum: ", torch.sum(ckpt_obj["tensor1"]), torch.sum(ckpt_obj["tensor2"]))
     ckpt_engine.wait(True)
-
+    f = open(ckpt_path, "rb")
+    os.fsync(f.fileno())
+    f.close()
+    wait_time = time.time()
+    print(f"Checkpointing completed successfully in {wait_time - start_time}, now recovering the checkpoint...")
 
     recovered_obj = ckpt_engine.load(path=ckpt_path)
     print("Recovering tensor of sum: ", torch.sum(recovered_obj["tensor1"]), torch.sum(recovered_obj["tensor2"]))

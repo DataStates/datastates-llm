@@ -8,7 +8,6 @@ find_package(CUDAToolkit REQUIRED)
 if(BUILD_PYTHON_BINDINGS)
     find_package(Python 3.8 COMPONENTS Interpreter Development REQUIRED)
     find_package(nanobind CONFIG REQUIRED HINTS ${Python_SITELIB}/nanobind)
-    find_package(vlcc_states REQUIRED HINTS ${Python_SITELIB}/vlcc_states)
 endif()
 
 include_directories(
@@ -20,7 +19,6 @@ file(GLOB_RECURSE CORE_SOURCES
     src/pool/*.cpp
     src/tiers/*.cpp
     src/serializers/*.cpp
-    src/state_provider/*.cpp
     src/core_impl.cpp
     src/datastates.cpp
 )
@@ -42,11 +40,17 @@ install(TARGETS datastates_core
 )
 
 if(BUILD_PYTHON_BINDINGS)
-    set(NB_PYTHON_MODULE_SRC src/nb_datastates_core.cpp)
 
-    nanobind_add_module(datastates_core_py MODULE ${NB_PYTHON_MODULE_SRC})
+    file(GLOB_RECURSE NB_SOURCES
+        src/nb_datastates_core.cpp
+        src/state_io_engine.cpp
+        src/state_io_engine_impl.cpp
+        src/state_provider/*.cpp
+    )
+
+    nanobind_add_module(datastates_core_py MODULE ${NB_SOURCES})
     target_link_libraries(datastates_core_py PRIVATE datastates_core)
-    target_include_directories(datastates_core_py PRIVATE ${PROJECT_SOURCE_DIR}/include)
+    target_include_directories(datastates_core_py PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src/state_provider)
     set_target_properties(datastates_core_py PROPERTIES OUTPUT_NAME "datastates_core")
 
     install(TARGETS datastates_core_py

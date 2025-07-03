@@ -36,11 +36,17 @@ public:
         cv.notify_all();
     };
     void wait_for_completion() {
-        std::unique_lock<std::mutex> lck(mtx);
-        while(q.size() > 0)
-            cv.wait(lck);
-        lck.unlock();
-        cv.notify_all();
+        try {
+            std::unique_lock<std::mutex> lck(mtx);
+            while(q.size() > 0)
+                cv.wait(lck);
+            lck.unlock();
+            cv.notify_all();
+        } catch (std::exception& e) {
+            FATAL("Exception caught in wait_for_completion: " << e.what());
+        } catch (...) {
+            FATAL("Unknown exception caught in wait_for_completion.");
+        }
     }
     void set_inactive() {
         std::unique_lock<std::mutex> lck(mtx);

@@ -16,7 +16,7 @@ from .utils import get_logger
 SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
 
-class BaseCheckpointEngine:
+class CheckpointEngine:
     def __init__(self, runtime_config={}, rank=0) -> None:
         try:
             if not torch.cuda.is_available():
@@ -26,9 +26,11 @@ class BaseCheckpointEngine:
             datastates_config   = parse_config(runtime_config)
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
-            concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
-            self.ckpt_engine = dstates_engine(host_cache_size, cuda_device, self.rank)
-            self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
+            # concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
+            # self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
+            self.ckpt_engine = create_io_engine(host_cache_size, cuda_device, self.rank)
+            self.sm = state_manager()
+            
             self.logger = get_logger(__name__)
             self.last_ckpt_version = -1
 
@@ -40,6 +42,7 @@ class BaseCheckpointEngine:
         try:
             version = get_checkpoint_version(path, self.last_ckpt_version)
             header = {}
+            self.sm = state_manager()
             async_copies = {}
             _start_tensor_offset = 0
             _end_tensor_offset = 0
@@ -83,23 +86,15 @@ class BaseCheckpointEngine:
             header.update({"datastates_metadata": {"data_offsets": [_start_tensor_offset, _end_tensor_offset]}})
             header = json.dumps(header).encode("utf-8")
             header_size = len(header).to_bytes(SIZE_UINT64, 'little')   # Force the header size to take 8 bytes
-            metadata_size = len(header_size) + len(header)
-            
+            self.sm.add_var(header_size)
+            self.sm.add_var(header)
+
             # Launch Async copies
             for i, (_, v) in enumerate(async_copies.items()):
-                v["file_offset"] += metadata_size
-                tensor_bytes = v["tensor"].numel()*v["tensor"].element_size()
                 print("Checkpointing now region ", i)
-                self.ckpt_engine.ckpt(version, i, v["tensor"], tensor_bytes, v["file_offset"], path)
-
-            with open(path, 'wb') as f:
-                f.seek(0)
-                f.write(header_size)
-                f.write(header)
-                # Write the lean state dict towards the end of the file.
-                f.seek(_start_tensor_offset+metadata_size)
-                f.write(lean_state_dict)           
-            
+                self.sm.add_var(v["tensor"])
+            self.sm.add_var(lean_state_dict)
+            self.ckpt_engine.ckpt(version, self.sm, path)
             return None
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From DataStates save_background, generated exception: {exc}")
@@ -109,8 +104,8 @@ class BaseCheckpointEngine:
         try:
             if not isinstance(state_dict, (dict, OrderedDict)):
                 raise Exception(f"[DataStates.llm] state_dict given to checkpoint must be dictionary. Passed {type(state_dict)} instead for {path}.")
-            self.executor.submit(self.save_background, state_dict, path)
-            # self.save_background(state_dict, path)
+            # self.executor.submit(self.save_background, state_dict, path)
+            self.save_background(state_dict, path)
             return True
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] Could not save {path}, exception: {exc}, data: {state_dict}")
@@ -121,10 +116,14 @@ class BaseCheckpointEngine:
             version = get_checkpoint_version(path, self.last_ckpt_version)
             f = open(path, 'rb')
             f.seek(0)
-            header_size_bytes = f.read(SIZE_UINT64)
-            header_size = int.from_bytes(header_size_bytes, 'little')
-            metadata_size = header_size + SIZE_UINT64
-            header = json.loads(f.read(header_size))
+            try:
+                header_size_bytes = f.read(SIZE_UINT64)
+                header_size = int.from_bytes(header_size_bytes, 'little')
+                metadata_size = header_size + SIZE_UINT64
+                header = json.loads(f.read(header_size))
+            except Exception as exc:
+                raise Exception(f"[DataStates.llm] Could not read header size from {path}, exception: {exc}")
+            
             [start_offset, end_offset] = np.add(header["datastates_metadata"]["data_offsets"], metadata_size)
             del(header["datastates_metadata"])
             f.seek(start_offset)
@@ -177,7 +176,7 @@ class BaseCheckpointEngine:
     def wait(self, persist=False):
         try:
             t = time.time()
-            self.ckpt_engine.wait(persist)
+            self.ckpt_engine.wait(self.sm, persist)
             # self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")
@@ -185,4 +184,5 @@ class BaseCheckpointEngine:
         return 
     
     def __del__(self):
-        self.executor.shutdown(True)
+        # self.executor.shutdown(True)
+        pass

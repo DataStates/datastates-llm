@@ -1,11 +1,11 @@
-#ifndef __VLCC_STATES_BASE_SERIALIZER_HPP
-#define __VLCC_STATES_BASE_SERIALIZER_HPP
+#ifndef __STATE_BASE_SERIALIZER_HPP
+#define __STATE_BASE_SERIALIZER_HPP
 
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
 namespace nb = nanobind;
 
-namespace vlcc_states {
+namespace datastates {
 
 class base_serializer_t {
 public:
@@ -21,6 +21,6 @@ public:
     // Get the name of the serializer
     virtual std::string get_name() const = 0;
 };
-}  // namespace vlcc_states
+}  // namespace datastates
 
-#endif // __VLCC_STATES_BASE_SERIALIZER_HPP
+#endif // __STATE_BASE_SERIALIZER_HPP
