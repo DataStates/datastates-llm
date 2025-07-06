@@ -43,7 +43,7 @@ void mem_pool_t::assign_(mem_region_t* m) {
         if (head_ > total_size_)
             head_ = 0;
         curr_size_ += m->size;
-        alloc_map_[m->uid] = m->size;
+        alloc_map_[m->internal_uid] = m->size;
         mem_q_.push_back(m);
         DBG("[" << rank_ << "]" << "Assigned " << m->uid << " of size " << m->size << " curr size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
     } catch (std::exception &e) {
@@ -94,7 +94,7 @@ void mem_pool_t::allocate(mem_region_t* m) {
         }
         mem_lock_.unlock();
         mem_cv_.notify_all();
-        DBG("[" << rank_ << "]" << "Allocated for " << m->uid << " of size " << m->size << " when current memory is " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
+        DBG("[" << rank_ << "]" << "Allocated for " << m->uid << " internal uid " << m->internal_uid << " of size " << m->size << " when current memory is " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
     } catch (std::exception &e) {
         FATAL("Exception caught in allocate function." << e.what());
     }
@@ -102,18 +102,18 @@ void mem_pool_t::allocate(mem_region_t* m) {
 
 void mem_pool_t::deallocate(mem_region_t* m) {
     try {
-        DBG("[" << rank_ << "]" << "Going to deallocate " << m->uid << " of size " << m->size << " on tier " << device_type_);
-        if (get_capacity() <= 0 || alloc_map_.find(m->uid) == alloc_map_.end())
+        DBG("[" << rank_ << "]" << "Going to deallocate " << m->internal_uid << " of size " << m->size << " on tier " << device_type_);
+        if (get_capacity() <= 0 || alloc_map_.find(m->internal_uid) == alloc_map_.end())
             return;
         if (mem_q_.empty() || m->uid < 0)
             return;
         mem_region_t *top_m = mem_q_.front();
-        if (alloc_map_[m->uid] != m->size) {
-            FATAL("The size allocated from the pool " << alloc_map_[m->uid] << " is different than the original size of tensor " << m->size << " on tier " << device_type_);
+        if (alloc_map_[m->internal_uid] != m->size) {
+            FATAL("The size allocated from the pool " << alloc_map_[m->internal_uid] << " is different than the original size of tensor " << m->size << " on tier " << TIER_TYPE_NAMES[device_type_] << " for uid " << m->uid << " internal UID " << m->internal_uid);
         }
-        if (m->uid != top_m->uid) {
+        if (m->internal_uid != top_m->internal_uid) {
             print_trace_();
-            FATAL("Should deallocate the tail first. Only FIFO eviction allowed. Tried deleting " << m->uid << " but front element was " << top_m->uid << " on tier " << device_type_);            
+            FATAL("Should deallocate the tail first. Only FIFO eviction allowed. Tried deleting " << m->internal_uid << " but front element was " << top_m->internal_uid << " on tier " << device_type_);            
             return;
         }
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
@@ -123,8 +123,8 @@ void mem_pool_t::deallocate(mem_region_t* m) {
         curr_size_ -= m->size;
         if (curr_size_ == 0)
             head_ = tail_ = 0;
-        alloc_map_.erase(m->uid);
-        DBG("[" << rank_ << "]" << "deallocated " << m->uid << " of size " << m->size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
+        alloc_map_.erase(m->internal_uid);
+        DBG("[" << rank_ << "]" << "deallocated " << m->uid << " internal uid " << m->internal_uid << " of size " << m->size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
         mem_q_.pop_front();
         mem_lock_.unlock();
         mem_cv_.notify_all();
@@ -138,10 +138,10 @@ void mem_pool_t::print_trace_() {
         DBG("===================================================");
         for (size_t i = 0; i < mem_q_.size(); ++i) {
             const auto e = mem_q_[i];
-            DBG("UID: " << e->uid << " ptr: " << (void*)e->ptr << " start: " << e->file_start_offset << " end: " << e->file_start_offset+e->size);
+            DBG("UID: " << e->uid << " internal UID: " << e->internal_uid << " ptr: " << (void*)e->ptr << " start: " << e->file_start_offset << " end: " << e->file_start_offset+e->size);
         }
         auto e = mem_q_.front();
-        DBG("First element " << e->uid << " ptr " << (void *)e->ptr << " at start offset " << e->file_start_offset);
+        DBG("First element " << e->uid << " internal UID: " << e->internal_uid << " ptr " << (void *)e->ptr << " at start offset " << e->file_start_offset);
         DBG("Head " << head_ << ", Tail " << tail_ << " On tier " << device_type_);
         DBG("===================================================");
     } catch (std::exception &e) {

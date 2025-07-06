@@ -91,7 +91,7 @@ class CheckpointEngine:
 
             # Launch Async copies
             for i, (_, v) in enumerate(async_copies.items()):
-                print("Checkpointing now region ", i)
+                # print("Checkpointing now region ", i)
                 self.sm.add_var(v["tensor"])
             self.sm.add_var(lean_state_dict)
             self.ckpt_engine.ckpt(version, self.sm, path)

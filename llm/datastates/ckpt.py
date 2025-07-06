@@ -89,7 +89,7 @@ class BaseCheckpointEngine:
             for i, (_, v) in enumerate(async_copies.items()):
                 v["file_offset"] += metadata_size
                 tensor_bytes = v["tensor"].numel()*v["tensor"].element_size()
-                print("Checkpointing now region ", i)
+                # print("Checkpointing now region ", i, " of size ", tensor_bytes, " on path ", path)
                 self.ckpt_engine.ckpt(version, i, v["tensor"], tensor_bytes, v["file_offset"], path)
 
             with open(path, 'wb') as f:
@@ -178,7 +178,7 @@ class BaseCheckpointEngine:
         try:
             t = time.time()
             self.ckpt_engine.wait(persist)
-            # self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
+            self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")
             sys.exit(-1)
