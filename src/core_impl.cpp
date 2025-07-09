@@ -29,17 +29,34 @@ void core_impl_t::ckpt(uint version, uint uid, const char* ptr, const std::uint6
         if (attr.type == GPU_TIER) {
             assert((attr.device == gpu_id) && "Pointer not on the same GPU as ckpt engine");
             mem_region_t* m = new mem_region_t(version, uid, const_cast<char*>(ptr), size, file_offset, path, GPU_TIER);
-            gpu_tier->flush(m);
+            ckpt_region(m);
             return;
         } else if (attr.type == HOST_PINNED_TIER || attr.type == HOST_UNPINNED_TIER) {
             mem_region_t* m = new mem_region_t(version, uid, const_cast<char*>(ptr), size, file_offset, path, HOST_PINNED_TIER);
-            host_tier->flush(m);
+            ckpt_region(m);
             return;
         } else {
             FATAL("Checkpointing is not supported on tiers other than GPU, Host unpinned, or Host pinned.");
         }
     } catch (std::exception &e) {
         FATAL("Exception caught in ckpt." << e.what());
+    }
+}
+
+void core_impl_t::ckpt_region(mem_region_t* m) {
+    try {
+        DBG("Going to checkpoint memory region with UID " << m->uid << " of size " << m->size << " at file offset " << m->file_start_offset);
+        if (m->curr_tier_type == GPU_TIER) {
+            assert((m->ptr != nullptr) && "Pointer cannot be null for GPU tier");
+            assert((m->size > 0) && "Size must be greater than zero for GPU tier");
+            gpu_tier->flush(m);
+        } else if (m->curr_tier_type == HOST_PINNED_TIER || m->curr_tier_type == HOST_UNPINNED_TIER) {
+            host_tier->flush(m);
+        } else {
+            FATAL("Checkpointing is not supported on tiers other than GPU, Host unpinned, or Host pinned.");
+        }
+    } catch (std::exception &e) {
+        FATAL("Exception caught in ckpt_region." << e.what());
     }
 }
 

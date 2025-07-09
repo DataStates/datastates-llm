@@ -17,12 +17,16 @@ state_manager_t::~state_manager_t() {
 
 void state_manager_t::add_var(nb::object data) {
     try {
-        int id = state_manager_id++;
+        int id = state_provider_uid++;
         assert(!data.is_none() && "Data to register cannot be null");
         assert(ids.find(id) == ids.end() && "ID already registered");
         ids.insert(id);
         auto provider = std::make_shared<state_provider_t>(id, data, relative_file_offset);
         register_provider(provider);
+        DBG("[DataStates][Add_var] Registered new state provider with ID: " << id 
+                  << ", size: " << provider->get_data_size() 
+                  << ", tier: " << TIER_TYPE_NAMES[provider->get_tier()] 
+                  << ", relative file offset: " << provider->file_start_offset);
         relative_file_offset += provider->get_data_size();
     } catch (std::exception& e) {
         FATAL("Exception caught in add_var: " << e.what());

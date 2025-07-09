@@ -24,6 +24,7 @@ class core_impl_t : public core_t {
 public:
     core_impl_t(size_t host_cache_size, int gpu_id, int rank = -1);
     void ckpt(uint version, uint region_id, const char* ptr, std::uint64_t size, std::uint64_t offset, std::string path) override;
+    void ckpt_region(mem_region_t* m) override;
     void restore(uint version, uint region_id, const char* ptr, std::uint64_t size, std::uint64_t offset, std::string path) override;
     void wait(bool persist=false) override;
     void shutdown() override;

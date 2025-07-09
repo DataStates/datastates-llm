@@ -23,7 +23,6 @@ protected:
     TIER_TYPES provider_device = HOST_UNPINNED_TIER; // Default to unregistered tier
     STATE_PROVIDER_CHUNK_STATUS data_status = STATE_PROVIDER_UNREAD_CHUNK;
     size_t data_size = 0;
-    size_t file_start_offset = 0; // Start offset in file for this region
 
     pickle_serializer_t* serializer = nullptr;
     nb::object data_object = nb::none(); // The Python object to be serialized
@@ -32,6 +31,7 @@ protected:
     size_t chunk_size = STATE_PROVIDER_DEFAULT_CHUNK_SIZE; // Default chunk size
     void register_state(nb::object d_object);
 public:
+    size_t file_start_offset = 0; // Start offset in file for this region
     state_provider_t(int region_id, nb::object d_object, size_t f_offset, TIER_TYPES device_type = HOST_UNPINNED_TIER);
     ~state_provider_t();
     TIER_TYPES get_tier() const; /* E.g. GPU, CPU, UVM, etc. */

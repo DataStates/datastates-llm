@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15...3.27)
 project(datastates-llm LANGUAGES CXX CUDA)
-
+set(CMAKE_CXX_STANDARD 17)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings using nanobind" ON)
 
 find_package(CUDAToolkit REQUIRED)

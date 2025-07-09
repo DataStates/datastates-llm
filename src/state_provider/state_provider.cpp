@@ -8,6 +8,7 @@ state_provider_t::state_provider_t(int r, nb::object d_object, size_t f_offset, 
 
 state_provider_t::~state_provider_t() {
     delete serializer;
+    data_object = nb::none();
 }
 
 void state_provider_t::register_state(nb::object d_object) {
@@ -38,7 +39,7 @@ void state_provider_t::register_state(nb::object d_object) {
             data_size = serialized_data.size();
             is_serialized = false; // Non-tensor objects are not serialized by default
         }
-        assert(data_size > 0 && "Data size must be greater than zero");    
+        assert(data_size > 0 && "Data size must be greater than zero");
         data_object = d_object; 
     } catch (std::exception& e) {
         FATAL("Exception caught in register_state: " << e.what());
@@ -89,17 +90,20 @@ bool state_provider_t::get_next_chunk(TIER_TYPES tier, mem_region_t* dest, size_
                 nb::ndarray<> arr = nb::cast<nb::ndarray<>>(data_object);
                 dest->ptr = reinterpret_cast<char*>(arr.data());
                 dest->size = arr.size() * arr.itemsize();
+                DBG("Data object " << dest->uid << " and inner id " << dest->internal_uid << "  is a tensor of shape: " << dest->size);
             } else if (is_serialized) {
                 if (nb::isinstance<nb::bytes>(data_object) || nb::isinstance<nb::bytearray>(data_object)) {
                     nb::bytes serialized_data = nb::cast<nb::bytes>(data_object);
+                    DBG("Data object " << dest->uid << " and inner id " << dest->internal_uid << "  is a serialized bytes object of size: " << nb::len(data_object) << " with len " << serialized_data.size());
                     dest->ptr = const_cast<char*>(static_cast<const char*>(serialized_data.data()));
                 } else {
-                    // This is likely a string
+                    DBG("Data object " << dest->uid << "  is a serialized string of size: " << nb::len(data_object));
                     dest->ptr = const_cast<char*>(nb::cast<std::string>(data_object).c_str());
                 }
                 dest->size = nb::len(data_object);
             } else {
                 assert(serializer != nullptr && "Serializer must be initialized for non-serialized objects");
+                DBG("Data object " << dest->uid << " and inner id " << dest->internal_uid << "  is a non serialized string of size: " << nb::len(data_object));
                 nb::bytes serialized_data = serializer->serialize(data_object);
                 dest->ptr = const_cast<char*>(static_cast<const char*>(serialized_data.data()));
                 dest->size = serialized_data.size();

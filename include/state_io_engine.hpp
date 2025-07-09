@@ -9,6 +9,7 @@
 
 namespace datastates {
 class state_io_engine_t {
+    
 public:
     virtual void ckpt(uint version, state_manager_t* state, std::string path) = 0;
     virtual void restore(uint version, state_manager_t* state, std::string path) = 0;
@@ -16,7 +17,7 @@ public:
     virtual void shutdown() = 0;
     virtual ~state_io_engine_t() = default;
 };
-
+static state_io_engine_t* state_io_engine_instance = nullptr;
 state_io_engine_t* create_io_engine(size_t host_cache_size, int gpu_id, int rank = -1);
 } // namespace datastates
 

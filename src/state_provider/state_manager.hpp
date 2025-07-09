@@ -8,7 +8,6 @@
 #include "state_provider.hpp"
 #include "datastates.hpp"
 
-volatile static int state_manager_id = 1;
 namespace datastates {
 class state_manager_t {
 private:
@@ -16,6 +15,7 @@ private:
     std::map<TIER_TYPES, int> current_provider_index;
     std::set<int> ids; // Set of unique IDs for registered providers
     size_t relative_file_offset = 0;
+    int state_provider_uid = 1;
 public:
     state_manager_t();
     ~state_manager_t();

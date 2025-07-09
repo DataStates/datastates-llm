@@ -29,7 +29,7 @@ class CheckpointEngine:
             # concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
             # self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.ckpt_engine = create_io_engine(host_cache_size, cuda_device, self.rank)
-            self.sm = state_manager()
+            self.sm = {}
             
             self.logger = get_logger(__name__)
             self.last_ckpt_version = -1
@@ -41,8 +41,12 @@ class CheckpointEngine:
     def save_background(self, state_dict: Union[dict, OrderedDict], path: str):
         try:
             version = get_checkpoint_version(path, self.last_ckpt_version)
+            self.last_ckpt_version = version
             header = {}
-            self.sm = state_manager()
+            if version not in self.sm:
+                self.sm[version] = {}
+            assert path not in self.sm[version], f"[DataStates.llm] Path {path} already exists in state manager for version {version}."
+            self.sm[version][path] = state_manager()
             async_copies = {}
             _start_tensor_offset = 0
             _end_tensor_offset = 0
@@ -81,20 +85,22 @@ class CheckpointEngine:
                     raise Exception(f"[DataStates.llm][ERROR] Cannot parse {key}, exception: {exc}, data is {data}")
 
             lean_state_dict = _parse_state("", state_dict)
-            lean_state_dict = pickle.dumps(lean_state_dict, protocol=pickle.HIGHEST_PROTOCOL)
-            _end_tensor_offset += len(lean_state_dict)
+            # lean_state_dict = pickle.dumps(lean_state_dict, protocol=pickle.HIGHEST_PROTOCOL)
+            # lean_state_dict = "this is a long long string"*10000
+            _end_tensor_offset += -1 #len(lean_state_dict)
             header.update({"datastates_metadata": {"data_offsets": [_start_tensor_offset, _end_tensor_offset]}})
             header = json.dumps(header).encode("utf-8")
             header_size = len(header).to_bytes(SIZE_UINT64, 'little')   # Force the header size to take 8 bytes
-            self.sm.add_var(header_size)
-            self.sm.add_var(header)
+            self.sm[version][path].add_var(header_size)
+            self.sm[version][path].add_var(header)
+            self.logger.info(f"[DataStates.LLM] Version {version} with lean state dict of size {len(lean_state_dict)} and header size {len(header)} will be saved to {path}.")
 
             # Launch Async copies
             for i, (_, v) in enumerate(async_copies.items()):
                 # print("Checkpointing now region ", i)
-                self.sm.add_var(v["tensor"])
-            self.sm.add_var(lean_state_dict)
-            self.ckpt_engine.ckpt(version, self.sm, path)
+                self.sm[version][path].add_var(v["tensor"])
+            self.sm[version][path].add_var(lean_state_dict)
+            self.ckpt_engine.ckpt(version, self.sm[version][path], path)
             return None
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From DataStates save_background, generated exception: {exc}")
@@ -168,21 +174,32 @@ class CheckpointEngine:
             sys.exit(-1)
 
     def commit(self, tag):
-        self.wait()
+        # self.wait()
         self.logger.info(f"[DataStates.llm] Checkpoint {tag} is ready now!")
-        self.last_ckpt_version += 1
+        # self.last_ckpt_version += 1
         return True
 
     def wait(self, persist=False):
         try:
+            if not self.sm:
+                self.logger.info("[DataStates.llm] No checkpoints to wait for.")
+                return
             t = time.time()
-            self.ckpt_engine.wait(self.sm, persist)
+            self.logger.info(f"[DataStates.llm] Waiting for checkpoint {self.last_ckpt_version} to be out of {self.sm.keys()} in checkpointing engine.")
+            for k, mgr in self.sm[self.last_ckpt_version].items():
+                self.ckpt_engine.wait(mgr, persist)
             # self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
+            self.logger.info(f"<TIMER:wait-persist-{persist},{time.time()-t}>")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")
             sys.exit(-1)
         return 
     
     def __del__(self):
+        for v in self.sm.keys():
+            for p in self.sm[v].keys():
+                del self.sm[v][p]
+        self.sm.clear()
+        del self.ckpt_engine
         # self.executor.shutdown(True)
         pass

@@ -15,7 +15,7 @@ host_tier_t::host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size
 
 void host_tier_t::flush(mem_region_t *src) {
     assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
-    assert((src->curr_tier_type == HOST_PINNED_TIER) && "[HOST_TIER] Source to flush from should be a host memory type.");
+    assert((src->curr_tier_type == HOST_PINNED_TIER || src->curr_tier_type == HOST_UNPINNED_TIER) && "[HOST_TIER] Source to flush from should be a host memory type.");
     assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only flush from host to file supported.");
     flush_q.push(src);
 }
@@ -39,15 +39,20 @@ void host_tier_t::flush_io_() {
         if (res == false || is_active == false)
             return;
         mem_region_t* src = flush_q.get_front();
-        DBG("[HOST_TIER] Flushing from host to file " << src->uid << " at file_offset " << src->file_start_offset << " at " << src->path << " tensor of size " << src->size);
+        size_t curr_size = 0, req_resize = 0;
+        std::error_code ec;
+        DBG("[HOST_TIER] Flushing from host to file " << src->uid << " internal uid " << src->internal_uid << " at file_offset " << src->file_start_offset << " at " << src->path << " tensor of size " << src->size);
         try {
-            if (!std::filesystem::exists(src->path)) {
-                std::ofstream createFile(src->path, std::ios::binary);
-                createFile.close();
-            }
             std::ofstream f;            
             f.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-            f.open(src->path, std::ios::in | std::ios::out | std::ios::binary);
+            f.open(src->path, std::ios::out | std::ios::binary);
+            curr_size = std::filesystem::file_size(src->path);
+            req_resize = src->file_start_offset + src->size;
+            if (req_resize > curr_size) {
+                std::filesystem::resize_file(src->path, req_resize, ec);
+                curr_size = std::filesystem::file_size(src->path, ec);
+            }
+            
             f.seekp(src->file_start_offset);
             f.write(const_cast<char*>(src->ptr), src->size);
             f.flush();      // This is for consistency guarantee.
@@ -55,7 +60,14 @@ void host_tier_t::flush_io_() {
             mem_pool->deallocate(src);
             flush_q.pop();
         } catch (const std::exception& ex) {
-            FATAL("[HostFlush] Got exception " << ex.what());
+            curr_size = std::filesystem::file_size(src->path, ec);
+            std::string resize_err = " req resize " + std::to_string(req_resize) + " error code: " 
+            + std::to_string(ec.value()) + " error message: " + ec.message();
+
+            FATAL("[HostFlush] Got exception " << "[HOST_TIER] Flushing from host to file region " 
+                << src->uid << " internal uid " << src->internal_uid << " at file_offset " << src->file_start_offset << " at " 
+                << src->path << " tensor of size " << src->size << " " << " curr file size " << curr_size << " error: " << ex.what() 
+                << " resize: " << resize_err);
         }
     }
 }

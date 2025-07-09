@@ -169,7 +169,7 @@ class BaseCheckpointEngine:
             sys.exit(-1)
 
     def commit(self, tag):
-        self.wait()
+        # self.wait()
         self.logger.info(f"[DataStates.llm] Checkpoint {tag} is ready now!")
         self.last_ckpt_version += 1
         return True
@@ -178,7 +178,8 @@ class BaseCheckpointEngine:
         try:
             t = time.time()
             self.ckpt_engine.wait(persist)
-            self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
+            # self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
+            self.logger.info(f"<TIMER:wait-persist-{persist},{time.time()-t}>")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")
             sys.exit(-1)

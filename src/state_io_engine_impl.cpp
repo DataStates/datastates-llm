@@ -19,7 +19,7 @@ void state_io_engine_impl_t::ckpt(uint version, state_manager_t* state, std::str
                 mem_region_t* m = new mem_region_t(version, 0 /*region_id*/, nullptr /*ptr*/, 0 /*size*/ , 0 /*file_offset*/, path, tier);
                 state->get_next_chunk(tier, m);
                 DBG("Going to checkpoint memory region with UID " << m->uid << " of size " << m->size << " at file offset " << m->file_start_offset);
-                core_engine->ckpt(version, m->uid, m->ptr, m->size, m->file_start_offset, path);
+                core_engine->ckpt_region(m);
             }
         }
     } catch (std::exception &e) {
