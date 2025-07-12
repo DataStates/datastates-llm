@@ -8,21 +8,35 @@ gpu_tier_t::gpu_tier_t(int gpu_id, unsigned int num_threads, size_t total_size):
     mem_pool = new mem_pool_t(start_ptr_, total_size, gpu_id, GPU_TIER);
     flush_thread_ = std::thread([&] { flush_io_(); });
     fetch_thread_ = std::thread([&] { fetch_io_(); });
-    flush_thread_.detach();
-    fetch_thread_.detach();
+    // flush_thread_.detach();
+    // fetch_thread_.detach();
     checkCuda(cudaStreamCreateWithFlags(&flush_stream, cudaStreamNonBlocking));
     checkCuda(cudaStreamCreateWithFlags(&fetch_stream, cudaStreamNonBlocking));
     DBG("Started flush and fetch threads_ on GPU tier for GPU: " << gpu_id);
 }
 
-void gpu_tier_t::flush(mem_region_t *m) {
+gpu_tier_t::~gpu_tier_t() {
+    flush_q.wait_for_completion();
+    fetch_q.wait_for_completion();
+    checkCuda(cudaStreamSynchronize(flush_stream));
+    checkCuda(cudaStreamSynchronize(fetch_stream));
+    checkCuda(cudaStreamDestroy(flush_stream));
+    checkCuda(cudaStreamDestroy(fetch_stream));
+    is_active = false;
+    flush_q.set_inactive();
+    fetch_q.set_inactive();
+    flush_thread_.join();
+    fetch_thread_.join();
+}
+
+void gpu_tier_t::flush(std::shared_ptr<mem_region_t> m) {
     assert((successor_tier_ != nullptr) && "[GPU_TIER] Successor tier is not set.");
     assert((m->curr_tier_type == GPU_TIER) && "[GPU_TIER] Source to flush from should be a gpu memory type.");
     assert((successor_tier_->tier_type_ == HOST_PINNED_TIER) && "[GPU_TIER] Only flush from gpu to pinned host memory is supported.");
     flush_q.push(m);
 }
 
-void gpu_tier_t::fetch(mem_region_t *m) {
+void gpu_tier_t::fetch(std::shared_ptr<mem_region_t> m) {
     assert((successor_tier_ != nullptr) && "[GPU_TIER] Successor tier is not set.");
     assert((m->curr_tier_type == HOST_PINNED_TIER) && "[GPU_TIER] Only fetch from pinned host memory to gpu supported.");
     assert((successor_tier_->tier_type_ == HOST_PINNED_TIER) && "[GPU_TIER] Only fetch from pinned host memory to gpu supported.");
@@ -30,7 +44,7 @@ void gpu_tier_t::fetch(mem_region_t *m) {
 }
 
 void gpu_tier_t::wait_for_completion() {
-    DBG("Going to invoke flush_q.wait_for_completeion()");
+    DBG("Going to invoke flush_q.wait_for_completion()");
     flush_q.wait_for_completion();
 };
 
@@ -40,9 +54,9 @@ void gpu_tier_t::flush_io_() {
         bool res = flush_q.wait_for_item();
         if (res == false || is_active == false)
             return;
-        mem_region_t* src = flush_q.get_front();
+        auto src = flush_q.get_front();
         DBG("In GPU tier got src...." << successor_tier_->tier_type_ );
-        mem_region_t* dest = new mem_region_t(src, successor_tier_->tier_type_);
+        auto dest = std::make_shared<mem_region_t>(src, successor_tier_->tier_type_);
         successor_tier_->mem_pool->allocate(dest);
         checkCuda(cudaMemcpyAsync(const_cast<void*>(static_cast<const void*>(dest->ptr)), static_cast<const void*>(src->ptr), src->size, cudaMemcpyDeviceToHost, flush_stream));
         checkCuda(cudaStreamSynchronize(flush_stream));
@@ -59,9 +73,9 @@ void gpu_tier_t::fetch_io_() {
         bool res = fetch_q.wait_for_item();
         if (res == false || is_active == false)
             return;
-        mem_region_t* src = fetch_q.get_front();
-        mem_region_t* dest = new mem_region_t(src, tier_type_);
-        
+        auto src = fetch_q.get_front();
+        auto dest = std::make_shared<mem_region_t>(src, tier_type_);
+
         if (mem_pool->get_capacity()) {
             mem_pool->allocate(dest);
             checkCuda(cudaMemcpyAsync(const_cast<void*>(static_cast<const void*>(dest->ptr)), static_cast<const void*>(src->ptr), src->size, cudaMemcpyHostToDevice, fetch_stream));

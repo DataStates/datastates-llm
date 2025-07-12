@@ -1,12 +1,15 @@
 #ifndef __DATASTATES_DEFS_HPP
 #define __DATASTATES_DEFS_HPP
+#include <cstddef>
+#include <cuda_runtime.h>
+
 typedef unsigned int uint;
 enum TIER_TYPES: int {
-    HOST_UNPINNED_TIER=0,               // cudaMemoryTypeUnregistered = 0
-    HOST_PINNED_TIER=1,                 // cudaMemoryTypeHost = 1
-    GPU_TIER=2,                         // cudaMemoryTypeDevice = 2
-    UNIFIED_MEM_TIER=3,                 // cudaMemoryTypeManaged = 3
-    COMPOSITE_TIER=4,                   // Tier for composite providers
+    HOST_UNPINNED_TIER=cudaMemoryTypeUnregistered,          // cudaMemoryTypeUnregistered = 0
+    HOST_PINNED_TIER=cudaMemoryTypeHost,                    // cudaMemoryTypeHost = 1
+    GPU_TIER=cudaMemoryTypeDevice,                          // cudaMemoryTypeDevice = 2
+    UNIFIED_MEM_TIER=cudaMemoryTypeManaged,                 // cudaMemoryTypeManaged = 3
+    COMPOSITE_TIER=4,                                       // Tier for composite providers
     FILE_TIER=5
 };
 
@@ -26,7 +29,6 @@ enum STATE_PROVIDER_CHUNK_STATUS: int {
 };
 
 const size_t STATE_PROVIDER_DEFAULT_CHUNK_SIZE = 64 * (1<<20);
-
-
+const size_t MAX_FILE_WRITE_SIZE = 1 << 30; // 1 GB
 
 #endif // __DATASTATES_DEFS_HPP

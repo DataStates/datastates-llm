@@ -8,6 +8,10 @@ mem_pool_t::mem_pool_t(char* start_ptr, size_t total_size, int rank, TIER_TYPES 
         if (device_type_ != attributes.type) {
             FATAL("The device type of the memory pool " << device_type_ << " does not match the pointer type " << attributes.type);
         }
+        if (!is_aligned(reinterpret_cast<uintptr_t>(start_ptr_))) {
+            FATAL("The start pointer of the memory pool " << reinterpret_cast<void*>(start_ptr_) 
+                << " is not aligned to " << get_fs_block_alignment() << " bytes.");
+        }
         is_active = true;
         DBG("Returned from the memory pool function on tier " << device_type_);
     } catch (std::exception &e) {
@@ -34,30 +38,50 @@ size_t mem_pool_t::get_capacity() {
     return total_size_;
 }
 
-void mem_pool_t::assign_(mem_region_t* m) {
+void mem_pool_t::assign_(std::shared_ptr<mem_region_t> m) {
     try {
-        if (head_+m->size > total_size_) 
+        if (head_ + m->aligned_size > total_size_)
             FATAL("Exception in assign: exceeding total memory size on tier " << device_type_);
         m->ptr = start_ptr_ + head_;
-        head_ += m->size;
+        if (!is_aligned(head_)) {
+            FATAL("The head pointer " << head_ 
+                << " is not aligned to " << get_fs_block_alignment() << " bytes on tier " << device_type_);
+        }
+        if (!is_aligned(reinterpret_cast<uintptr_t>(m->ptr))) {
+            FATAL("The pointer " << reinterpret_cast<void*>(m->ptr)
+                << " is not aligned to " << get_fs_block_alignment() << " bytes on tier " << device_type_);
+        }
+        head_ += m->aligned_size;
         if (head_ > total_size_)
             head_ = 0;
-        curr_size_ += m->size;
-        alloc_map_[m->internal_uid] = m->size;
+        curr_size_ += m->aligned_size;
+        alloc_map_[m->internal_uid] = m->aligned_size;
         mem_q_.push_back(m);
-        DBG("[" << rank_ << "]" << "Assigned " << m->uid << " of size " << m->size << " curr size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
+        DBG("[" << rank_ << "]" << "Assigned " << m->uid << " of size " << m->size << " aligned " 
+            << m->aligned_size << " curr size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
     } catch (std::exception &e) {
         FATAL("Exception caught in assign_." << e.what());
     }
 }
 
-void mem_pool_t::allocate(mem_region_t* m) {
+void mem_pool_t::allocate(std::shared_ptr<mem_region_t> m) {
     try {
-        if (m->size > total_size_) 
-            FATAL("[" << rank_ << "]" <<"Cannot allocate size " << m->size << " larger than the pool of " << total_size_ << " on tier " << device_type_);
+        if (m->size <= 0 || m->size > total_size_ || m->size > std::numeric_limits<size_t>::max()) {
+            FATAL("[" << rank_ << "]" << "Invalid memory region size " << m->size << " on tier " 
+                << device_type_ << " for uid " << m->uid);
+        }
+
+        m->aligned_size = m->size;
+        if (!is_aligned(m->size)) { // FS_BLOCK_SIZE_ALIGNMENT==1 means no alignment
+            m->aligned_size = get_aligned_offset(m->size);
+        }
+        if (m->aligned_size > total_size_) {
+            FATAL("[" << rank_ << "]" << "Cannot allocate size " << m->aligned_size << " aligned size " << m->aligned_size 
+                << " larger than the pool of " << total_size_ << " on tier " << device_type_);
+        }
         m->ptr = nullptr;
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
-        while((curr_size_ + m->size > total_size_) && is_active)
+        while ((curr_size_ + m->aligned_size > total_size_) && is_active)
             mem_cv_.wait(mem_lock_);
         if (!is_active) {
             mem_lock_.unlock();
@@ -67,7 +91,7 @@ void mem_pool_t::allocate(mem_region_t* m) {
         if (tail_ == head_)
             tail_ = head_ = 0;
         if (tail_ <= head_) {
-            if (total_size_ - head_ >= m->size)
+            if (total_size_ - head_ >= m->aligned_size)
                 // The gap at the end of the buffer is enough to hold the incoming data.
                 assign_(m);
             else
@@ -76,7 +100,7 @@ void mem_pool_t::allocate(mem_region_t* m) {
         } 
         if (m->ptr == nullptr) {
             // tail_ > head_ when we start writing from head_=0.
-            while(((tail_ > head_) && (tail_ - head_ < m->size)) && is_active) {
+            while (((tail_ > head_) && (tail_ - head_ < m->aligned_size)) && is_active) {
                 mem_cv_.wait(mem_lock_);
             }
             // Happens when deallocate function resets the tail pointer to 0 when tail+dealloc_size > max_buffer_cap
@@ -94,37 +118,42 @@ void mem_pool_t::allocate(mem_region_t* m) {
         }
         mem_lock_.unlock();
         mem_cv_.notify_all();
-        DBG("[" << rank_ << "]" << "Allocated for " << m->uid << " internal uid " << m->internal_uid << " of size " << m->size << " when current memory is " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
+        DBG("[" << rank_ << "]" << "Allocated for " << m->uid << " internal uid " << m->internal_uid << " of size " 
+            << m->size << " aligned size " << m->aligned_size << " when current memory is " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
     } catch (std::exception &e) {
         FATAL("Exception caught in allocate function." << e.what());
     }
 }
 
-void mem_pool_t::deallocate(mem_region_t* m) {
+void mem_pool_t::deallocate(std::shared_ptr<mem_region_t> m) {
     try {
         DBG("[" << rank_ << "]" << "Going to deallocate " << m->internal_uid << " of size " << m->size << " on tier " << device_type_);
         if (get_capacity() <= 0 || alloc_map_.find(m->internal_uid) == alloc_map_.end())
             return;
         if (mem_q_.empty() || m->uid < 0)
             return;
-        mem_region_t *top_m = mem_q_.front();
-        if (alloc_map_[m->internal_uid] != m->size) {
-            FATAL("The size allocated from the pool " << alloc_map_[m->internal_uid] << " is different than the original size of tensor " << m->size << " on tier " << TIER_TYPE_NAMES[device_type_] << " for uid " << m->uid << " internal UID " << m->internal_uid);
+        auto top_m = mem_q_.front();
+        if (alloc_map_[m->internal_uid] != m->aligned_size) {
+            FATAL("The size allocated from the pool " << alloc_map_[m->internal_uid] << " is different than the original size of tensor " 
+                << m->size << " aligned " << m->aligned_size << " on tier " << TIER_TYPE_NAMES[device_type_] << " for uid " << m->uid 
+                << " internal UID " << m->internal_uid);
         }
         if (m->internal_uid != top_m->internal_uid) {
             print_trace_();
-            FATAL("Should deallocate the tail first. Only FIFO eviction allowed. Tried deleting " << m->internal_uid << " but front element was " << top_m->internal_uid << " on tier " << device_type_);            
+            FATAL("Should deallocate the tail first. Only FIFO eviction allowed. Tried deleting " << m->internal_uid 
+                << " but front element was " << top_m->internal_uid << " on tier " << device_type_);            
             return;
         }
         std::unique_lock<std::mutex> mem_lock_(mem_mutex_);
-        tail_ += m->size;
+        tail_ += m->aligned_size;
         if (tail_ > total_size_)
             tail_ = 0;
-        curr_size_ -= m->size;
+        curr_size_ -= m->aligned_size;
         if (curr_size_ == 0)
             head_ = tail_ = 0;
         alloc_map_.erase(m->internal_uid);
-        DBG("[" << rank_ << "]" << "deallocated " << m->uid << " internal uid " << m->internal_uid << " of size " << m->size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
+        DBG("[" << rank_ << "]" << "deallocated " << m->uid << " internal uid " << m->internal_uid << " of size " 
+            << m->size << " aligned size " << m->aligned_size << " cur size " << curr_size_ << " cur head " << head_  << " cur tail " << tail_ << " on tier " << device_type_);
         mem_q_.pop_front();
         mem_lock_.unlock();
         mem_cv_.notify_all();
@@ -138,7 +167,9 @@ void mem_pool_t::print_trace_() {
         DBG("===================================================");
         for (size_t i = 0; i < mem_q_.size(); ++i) {
             const auto e = mem_q_[i];
-            DBG("UID: " << e->uid << " internal UID: " << e->internal_uid << " ptr: " << (void*)e->ptr << " start: " << e->file_start_offset << " end: " << e->file_start_offset+e->size);
+            DBG("UID: " << e->uid << " internal UID: " << e->internal_uid << " ptr: " 
+                << (void*)e->ptr << " start: " << e->file_start_offset << " end: " << e->file_start_offset+e->aligned_size 
+                << " size: " << e->size << " aligned size: " << e->aligned_size << " on tier " << TIER_TYPE_NAMES[e->curr_tier_type]);
         }
         auto e = mem_q_.front();
         DBG("First element " << e->uid << " internal UID: " << e->internal_uid << " ptr " << (void *)e->ptr << " at start offset " << e->file_start_offset);

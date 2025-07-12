@@ -51,4 +51,21 @@ inline std::mutex& log_mutex() {
     #define DBG(message) MESSAGE("DEBUG", message)
 #endif
 
+
+extern size_t FS_BLOCK_SIZE_ALIGNMENT;
+inline void set_fs_block_alignment(size_t alignment) {
+    FS_BLOCK_SIZE_ALIGNMENT = alignment;
+}
+inline const size_t get_fs_block_alignment() {
+    return FS_BLOCK_SIZE_ALIGNMENT;
+}
+
+inline size_t get_aligned_offset(size_t offset, size_t alignment = get_fs_block_alignment()) {
+    return (offset + alignment - 1) / alignment * alignment;
+}
+
+inline bool is_aligned(size_t offset) {
+    return offset % get_fs_block_alignment() == 0;
+}
+
 #endif //__DATASTATES_UTILS_HPP

@@ -4,23 +4,38 @@ host_tier_t::host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size
     base_tier_t(HOST_PINNED_TIER, gpu_id, num_threads, total_size) {
     assert((num_threads == 1) && "[HOST_TIER] Number of flush and fetch threads should be set to 1.");
     checkCuda(cudaSetDevice(gpu_id_));
-    checkCuda(cudaMallocHost(&start_ptr_, total_size));
+    // checkCuda(cudaMallocHost(&start_ptr_, total_size));
+    int ret = posix_memalign(reinterpret_cast<void**>(&start_ptr_), get_fs_block_alignment(), total_size);
+    if (ret != 0) {
+        FATAL("posix_memalign failed with error code " + std::to_string(ret));
+    }
+    checkCuda(cudaHostRegister(start_ptr_, total_size, cudaHostRegisterDefault));
     mem_pool = new mem_pool_t(start_ptr_, total_size, gpu_id, HOST_PINNED_TIER);
     flush_thread_ = std::thread([&] { flush_io_(); });
     fetch_thread_ = std::thread([&] { fetch_io_(); });
-    flush_thread_.detach();
-    fetch_thread_.detach();
     DBG("Started flush and fetch threads_ on Host tier for GPU: " << gpu_id);
 }
 
-void host_tier_t::flush(mem_region_t *src) {
+host_tier_t::~host_tier_t() {
+    flush_q.wait_for_completion();
+    fetch_q.wait_for_completion();
+    checkCuda(cudaHostUnregister(start_ptr_));
+    free(start_ptr_);
+    is_active = false;
+    flush_q.set_inactive();
+    fetch_q.set_inactive();
+    flush_thread_.join();
+    fetch_thread_.join();
+}
+
+void host_tier_t::flush(std::shared_ptr<mem_region_t> src) {
     assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
     assert((src->curr_tier_type == HOST_PINNED_TIER || src->curr_tier_type == HOST_UNPINNED_TIER) && "[HOST_TIER] Source to flush from should be a host memory type.");
     assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only flush from host to file supported.");
     flush_q.push(src);
 }
 
-void host_tier_t::fetch(mem_region_t *src) {
+void host_tier_t::fetch(std::shared_ptr<mem_region_t> src) {
     assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
     assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only fetch from file to host supported.");
     fetch_q.push(src);
@@ -28,7 +43,7 @@ void host_tier_t::fetch(mem_region_t *src) {
 }
 
 void host_tier_t::wait_for_completion() {
-    DBG("Going to invoke flush_q.wait_for_completeion()");
+    DBG("Going to invoke flush_q.wait_for_completion()");
     flush_q.wait_for_completion();
 };
 
@@ -38,37 +53,42 @@ void host_tier_t::flush_io_() {
         bool res = flush_q.wait_for_item();
         if (res == false || is_active == false)
             return;
-        mem_region_t* src = flush_q.get_front();
-        size_t curr_size = 0, req_resize = 0;
-        std::error_code ec;
-        DBG("[HOST_TIER] Flushing from host to file " << src->uid << " internal uid " << src->internal_uid << " at file_offset " << src->file_start_offset << " at " << src->path << " tensor of size " << src->size);
-        try {
-            std::ofstream f;            
-            f.exceptions(std::ofstream::failbit | std::ofstream::badbit);
-            f.open(src->path, std::ios::out | std::ios::binary);
-            curr_size = std::filesystem::file_size(src->path);
-            req_resize = src->file_start_offset + src->size;
-            if (req_resize > curr_size) {
-                std::filesystem::resize_file(src->path, req_resize, ec);
-                curr_size = std::filesystem::file_size(src->path, ec);
+        auto src = flush_q.get_front();
+        int fd = open(src->path.c_str(), O_WRONLY | O_CREAT, 0644);
+        if(src->aligned_size > 0 && get_fs_block_alignment() > 1) { // FS_BLOCK_SIZE_ALIGNMENT==1 means no alignment
+            if (!is_aligned(reinterpret_cast<uintptr_t>(src->ptr))) {
+                FATAL("[HOST_TIER] Pointer to flush should be aligned to get_fs_block_alignment() " 
+                    + std::to_string(reinterpret_cast<uintptr_t>(src->ptr)) 
+                    + " is not aligned to " + std::to_string(get_fs_block_alignment())
+                    + " for file " + src->path
+                    + " of size " + std::to_string(src->size) + " aligned size " + std::to_string(src->aligned_size));
             }
-            
-            f.seekp(src->file_start_offset);
-            f.write(const_cast<char*>(src->ptr), src->size);
-            f.flush();      // This is for consistency guarantee.
-            f.close();
-            mem_pool->deallocate(src);
-            flush_q.pop();
-        } catch (const std::exception& ex) {
-            curr_size = std::filesystem::file_size(src->path, ec);
-            std::string resize_err = " req resize " + std::to_string(req_resize) + " error code: " 
-            + std::to_string(ec.value()) + " error message: " + ec.message();
-
-            FATAL("[HostFlush] Got exception " << "[HOST_TIER] Flushing from host to file region " 
-                << src->uid << " internal uid " << src->internal_uid << " at file_offset " << src->file_start_offset << " at " 
-                << src->path << " tensor of size " << src->size << " " << " curr file size " << curr_size << " error: " << ex.what() 
-                << " resize: " << resize_err);
+            if (!is_aligned(src->file_start_offset)) {
+                FATAL("[HOST_TIER] File start offset to flush should be aligned to get_fs_block_alignment() " 
+                    + std::to_string(src->file_start_offset) 
+                    + " is not aligned to " + std::to_string(get_fs_block_alignment())
+                    + " for file " + src->path
+                    + " of size " + std::to_string(src->size) + " aligned size " + std::to_string(src->aligned_size));
+            }
+            fd = open(src->path.c_str(), O_WRONLY | O_CREAT | O_DIRECT, 0644);
         }
+
+        if (fd < 0) {
+            FATAL("[HostFlush] Failed to open file: " + src->path + " Error: " + strerror(errno));
+        }
+        size_t file_size = src->aligned_size > 0 ? src->aligned_size : src->size;
+        ssize_t written = pwrite_loop_(fd, src->ptr, file_size, src->file_start_offset);
+        if (written < 0 || static_cast<size_t>(written) < file_size) {
+            FATAL("[HostFlush] Incomplete or failed write: written "  + std::to_string(written) + " instead of " + std::to_string(file_size) + " error: " + std::string(strerror(errno)));
+        }
+        //// Optional: fsync() to ensure consistency
+        if (fsync(fd) != 0) {
+            close(fd);
+            FATAL("[pwrite] fsync failed: " + std::string(strerror(errno)));
+        }
+        close(fd);
+        mem_pool->deallocate(src);
+        flush_q.pop();
     }
 }
 
@@ -79,7 +99,7 @@ void host_tier_t::fetch_io_() {
             bool res = fetch_q.wait_for_item();
             if (res == false || is_active == false)
                 return;
-            mem_region_t* src = fetch_q.get_front();
+            auto src = fetch_q.get_front();
             DBG("Starting to fetch in background thread right now " << src->path << " from offset " << src->file_start_offset << " of size " << src->size);
             assert((src->ptr != nullptr) && "[HOST_TIER] Memory not allocated for fetching.");
                     
@@ -94,4 +114,18 @@ void host_tier_t::fetch_io_() {
             FATAL("[HostFetch] Got exception " << ex.what());
         }
     }
+}
+
+// Some filesystems do not allow writing more than 2GB (e.g. on ALCF Polaris), so we need this loop
+size_t host_tier_t::pwrite_loop_(int fd, const char* ptr, size_t size, size_t file_start_offset) {
+    size_t total_written = 0;
+    while (total_written < size) {
+        size_t to_write = std::min(size - total_written, static_cast<size_t>(MAX_FILE_WRITE_SIZE));
+        ssize_t written = pwrite(fd, ptr + total_written, to_write, file_start_offset + total_written);
+        if (written < 0 || static_cast<size_t>(written) < to_write) {
+            FATAL("[HostFlush] Incomplete or failed write: written "  + std::to_string(total_written) + " instead of " + std::to_string(size) + " error: " + std::string(strerror(errno)));
+        }
+        total_written += written;
+    }
+    return total_written;
 }

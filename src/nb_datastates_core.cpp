@@ -42,6 +42,7 @@ void restore_wrapper(datastates::core_t& self, int version, int region_uid, nb::
 }
 
 NB_MODULE(datastates_core, m) {
+    nb::set_leak_warnings(false);
     m.doc() = "DataStates-LLM Checkpoint Engine";
 
     nb::class_<datastates::core_t>(m, "core_engine")
@@ -62,9 +63,13 @@ NB_MODULE(datastates_core, m) {
     nb::class_<datastates::state_manager_t>(m, "state_manager")
         .def(nb::init<>())
         .def("add_var", &datastates::state_manager_t::add_var,
-            "data"_a, "Add a variable to the state manager.")
+            "data"_a, "key"_a, "Add a variable to the state manager.")
         .def("print_state", &datastates::state_manager_t::print_state,
-             "Print the state of all registered providers.");
+             "Print the state of all registered providers.")
+        .def("release", &datastates::state_manager_t::release,
+             "Release all resources held by the state manager.")
+        .def("has_next_chunk", &datastates::state_manager_t::has_next_chunk,
+             "Check if there is a next chunk available.");
 
     nb::class_<datastates::state_io_engine_t>(m, "state_io_engine")
         .def("ckpt", &datastates::state_io_engine_t::ckpt,
@@ -82,4 +87,11 @@ NB_MODULE(datastates_core, m) {
           nb::rv_policy::take_ownership,
           "host_cache_size"_a, "gpu_id"_a, "rank"_a = -1,
           "Create a new state I/O engine instance.");
+
+    m.def("set_fs_block_alignment", &set_fs_block_alignment,
+          "alignment"_a,
+          "Set the filesystem block size alignment for file operations.");
+
+    m.def("get_fs_block_alignment", &get_fs_block_alignment,
+          "Get the current filesystem block size alignment.");
 }

@@ -1,8 +1,9 @@
 // src/datastates_core.cpp (or similar)
 #include "datastates.hpp"
+#include "common/utils.hpp"
 #include "core_impl.hpp"
 
-
+size_t FS_BLOCK_SIZE_ALIGNMENT = 4096; // Set default filesystem block size alignment
 namespace datastates {
 static core_t* instance {nullptr};
 core_t* dstates_engine(size_t host_cache_size, int gpu_id, int rank) {

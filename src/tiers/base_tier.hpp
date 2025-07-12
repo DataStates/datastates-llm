@@ -18,16 +18,16 @@ protected:
     std::thread flush_thread_;
     std::thread fetch_thread_;
     std::atomic<bool> is_active{true};
-    atomic_queue_t flush_q;
-    atomic_queue_t fetch_q;
+    atomic_queue_t<std::shared_ptr<mem_region_t>> flush_q;
+    atomic_queue_t<std::shared_ptr<mem_region_t>> fetch_q;
 public:
     TIER_TYPES tier_type_;
     mem_pool_t* mem_pool = nullptr;
     base_tier_t(TIER_TYPES tier_type, int gpu_id, unsigned int num_threads, size_t total_size): 
         gpu_id_(gpu_id), num_threads_(num_threads), total_size_(total_size), tier_type_(tier_type) {};
     virtual ~base_tier_t() {};
-    virtual void flush(mem_region_t* src) = 0;
-    virtual void fetch(mem_region_t* src) = 0;
+    virtual void flush(std::shared_ptr<mem_region_t> src) = 0;
+    virtual void fetch(std::shared_ptr<mem_region_t> src) = 0;
     virtual void wait_for_completion() = 0;
     virtual void set_successor_tier(base_tier_t* tier) {
         successor_tier_  = tier;

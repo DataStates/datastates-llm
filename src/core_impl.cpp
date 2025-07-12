@@ -28,11 +28,11 @@ void core_impl_t::ckpt(uint version, uint uid, const char* ptr, const std::uint6
         checkCuda(cudaPointerGetAttributes(&attr, ptr));
         if (attr.type == GPU_TIER) {
             assert((attr.device == gpu_id) && "Pointer not on the same GPU as ckpt engine");
-            mem_region_t* m = new mem_region_t(version, uid, const_cast<char*>(ptr), size, file_offset, path, GPU_TIER);
+            auto m = std::make_shared<mem_region_t>(version, uid, const_cast<char*>(ptr), size, file_offset, path, GPU_TIER);
             ckpt_region(m);
             return;
         } else if (attr.type == HOST_PINNED_TIER || attr.type == HOST_UNPINNED_TIER) {
-            mem_region_t* m = new mem_region_t(version, uid, const_cast<char*>(ptr), size, file_offset, path, HOST_PINNED_TIER);
+            auto m = std::make_shared<mem_region_t>(version, uid, const_cast<char*>(ptr), size, file_offset, path, HOST_PINNED_TIER);
             ckpt_region(m);
             return;
         } else {
@@ -43,7 +43,7 @@ void core_impl_t::ckpt(uint version, uint uid, const char* ptr, const std::uint6
     }
 }
 
-void core_impl_t::ckpt_region(mem_region_t* m) {
+void core_impl_t::ckpt_region(std::shared_ptr<mem_region_t> m) {
     try {
         DBG("Going to checkpoint memory region with UID " << m->uid << " of size " << m->size << " at file offset " << m->file_start_offset);
         if (m->curr_tier_type == GPU_TIER) {
@@ -68,7 +68,7 @@ void core_impl_t::restore(uint version, uint uid, const char* ptr, const std::ui
             FATAL("Restoring to GPU memory is not yet supported. Please restore to host memory first.");
         }
         DBG("Going to restore from " << path << " tensor of size " << size << " at file offset " << file_offset);
-        mem_region_t* m = new mem_region_t(version, uid, const_cast<char*>(ptr), size, file_offset, path, HOST_PINNED_TIER);
+        auto m = std::make_shared<mem_region_t>(version, uid, const_cast<char*>(ptr), size, file_offset, path, HOST_PINNED_TIER);
         host_tier->fetch(m);
         return;
     } catch (std::exception &e) {
@@ -88,6 +88,7 @@ void core_impl_t::wait(bool persist) {
 
 void core_impl_t::shutdown() {
     try {
+        wait(true);
         delete gpu_tier;
         delete host_tier;
         return;

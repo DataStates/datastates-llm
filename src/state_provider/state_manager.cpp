@@ -1,7 +1,10 @@
 
 #include "state_manager.hpp"
 using namespace datastates;
-state_manager_t::state_manager_t() {}
+state_manager_t::state_manager_t() {
+    // The first size_t bytes are reserved for the header start offset.
+    file_offset = std::max(get_fs_block_alignment(), sizeof(size_t));
+}
 
 state_manager_t::~state_manager_t() {
     try {
@@ -15,19 +18,24 @@ state_manager_t::~state_manager_t() {
     }
 }
 
-void state_manager_t::add_var(nb::object data) {
+int state_manager_t::get_state_provider_uid() {
+    return state_provider_uid++;
+}
+
+void state_manager_t::add_var(nb::object data, std::string key) {
     try {
-        int id = state_provider_uid++;
+        int id = get_state_provider_uid();
+        assert(!key.empty() && "Key cannot be empty");
         assert(!data.is_none() && "Data to register cannot be null");
         assert(ids.find(id) == ids.end() && "ID already registered");
         ids.insert(id);
-        auto provider = std::make_shared<state_provider_t>(id, data, relative_file_offset);
+        auto provider = std::make_shared<state_provider_t>(id, data, key, file_offset);
         register_provider(provider);
+        compute_meta(provider);
         DBG("[DataStates][Add_var] Registered new state provider with ID: " << id 
                   << ", size: " << provider->get_data_size() 
                   << ", tier: " << TIER_TYPE_NAMES[provider->get_tier()] 
                   << ", relative file offset: " << provider->file_start_offset);
-        relative_file_offset += provider->get_data_size();
     } catch (std::exception& e) {
         FATAL("Exception caught in add_var: " << e.what());
     }
@@ -42,6 +50,29 @@ void state_manager_t::register_provider(std::shared_ptr<state_provider_t> provid
         }
     } catch (std::exception& e) {
         FATAL("Exception caught in register_provider: " << e.what());
+    }
+}
+
+void state_manager_t::compute_meta(std::shared_ptr<state_provider_t> provider) {
+    try {
+        assert(state_meta.find(provider->get_key()) == state_meta.end() && "Key already exists in meta");
+        size_t data_size = provider->get_data_size();
+        if (provider->is_tensor) {
+            state_meta[provider->get_key()] = {
+                {"shape", provider->get_tensor_shape()},
+                {"dtype", provider->get_tensor_dtype()},
+                {"offsets", {file_offset, file_offset + data_size}},
+            };
+        } else if (provider->is_serialized) {
+            state_meta[provider->get_key()] = {
+                {"offsets", {file_offset, file_offset + data_size}},
+            };
+        } else {
+            assert(false && "Unserialized data is not supported yet for computing headers");
+        }
+        file_offset = get_aligned_offset(file_offset + data_size);
+    } catch (std::exception& e) {
+        FATAL("Exception caught in compute_meta: " << e.what());
     }
 }
 
@@ -76,7 +107,7 @@ bool state_manager_t::has_next_chunk(TIER_TYPES tier) {
     }
 }
 
-bool state_manager_t::get_next_chunk(TIER_TYPES tier, mem_region_t* dest, size_t chunk_size) {
+bool state_manager_t::get_next_chunk(TIER_TYPES tier, std::shared_ptr<mem_region_t> dest, size_t chunk_size) {
     try {
         assert(!providers.empty() && "No providers registered");
         int& start = current_provider_index[tier];
@@ -109,5 +140,18 @@ void state_manager_t::release() {
         }
     } catch (std::exception& e) {
         FATAL("Exception caught in release: " << e.what());
+    }
+}
+
+
+size_t state_manager_t::get_file_offset() const {
+    return file_offset;
+}
+
+std::string state_manager_t::get_state_meta() const {
+    try {
+        return state_meta.dump();
+    } catch (std::exception& e) {
+        FATAL("Exception caught in get_state_meta: " << e.what());
     }
 }

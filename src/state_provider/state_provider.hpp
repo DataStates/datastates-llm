@@ -26,19 +26,24 @@ protected:
 
     pickle_serializer_t* serializer = nullptr;
     nb::object data_object = nb::none(); // The Python object to be serialized
-    bool is_serialized = false; // Flag to check if the object is serialized
-    bool is_tensor = false; // Flag to check if the object is a tensor
+    std::string data_key; // Key for the data object, used in header
     size_t chunk_size = STATE_PROVIDER_DEFAULT_CHUNK_SIZE; // Default chunk size
     void register_state(nb::object d_object);
 public:
     size_t file_start_offset = 0; // Start offset in file for this region
-    state_provider_t(int region_id, nb::object d_object, size_t f_offset, TIER_TYPES device_type = HOST_UNPINNED_TIER);
+    bool is_tensor = false; // Flag to check if the object is a tensor
+    bool is_serialized = false; // Flag to check if the object is serialized
+
+    state_provider_t(int region_id, nb::object d_object, std::string key, size_t f_offset, TIER_TYPES device_type = HOST_UNPINNED_TIER);
     ~state_provider_t();
     TIER_TYPES get_tier() const; /* E.g. GPU, CPU, UVM, etc. */
     size_t get_data_size() const;
+    std::string get_key() const;
     void print_state() const;
     bool has_next_chunk() const;
-    bool get_next_chunk(TIER_TYPES tier, mem_region_t* dest, size_t chunk_size = 0);
+    std::string get_tensor_shape() const;
+    std::string get_tensor_dtype() const;
+    bool get_next_chunk(TIER_TYPES tier, std::shared_ptr<mem_region_t> dest, size_t chunk_size = 0);
     void release();
 };
 

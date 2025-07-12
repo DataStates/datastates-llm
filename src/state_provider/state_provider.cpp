@@ -1,8 +1,8 @@
 #include "state_provider.hpp"
 
 using namespace datastates;
-state_provider_t::state_provider_t(int r, nb::object d_object, size_t f_offset, TIER_TYPES device_type)
-    : region_id(r), provider_device(device_type), file_start_offset(f_offset) {
+state_provider_t::state_provider_t(int r, nb::object d_object, std::string key, size_t f_offset, TIER_TYPES device_type)
+    : region_id(r), provider_device(device_type), file_start_offset(f_offset), data_key(key) {
     register_state(d_object);
 }
 
@@ -65,6 +65,34 @@ bool state_provider_t::has_next_chunk() const {
     return data_status == STATE_PROVIDER_UNREAD_CHUNK;
 }
 
+std::string state_provider_t::get_key() const {
+    assert(!data_key.empty() && "Data key is not set");
+    return data_key;
+}
+
+std::string state_provider_t::get_tensor_shape() const {
+    if (is_tensor) {
+        nb::object shape = data_object.attr("shape");
+        return nb::str(shape).c_str();
+    }
+    return "";
+}
+
+std::string state_provider_t::get_tensor_dtype() const {
+    if (is_tensor) {
+        try {
+            nb::object dtype = data_object.attr("dtype");
+            nb::object dtype_str = nb::str(dtype);
+            return nb::cast<std::string>(dtype_str);
+        } catch (const nb::cast_error& e) {
+            FATAL("Failed to get tensor dtype: " << e.what());
+        } catch (const std::exception& e) {
+            FATAL("Exception caught in get_tensor_dtype: " << e.what());
+        }
+    }
+    return "";
+}
+
 void state_provider_t::print_state() const {
     std::cout << "Provider region: " << region_id 
               << ", Tier: " << TIER_TYPE_NAMES[provider_device]
@@ -74,7 +102,7 @@ void state_provider_t::print_state() const {
               << std::endl;
 }
 
-bool state_provider_t::get_next_chunk(TIER_TYPES tier, mem_region_t* dest, size_t chunk_size) {
+bool state_provider_t::get_next_chunk(TIER_TYPES tier, std::shared_ptr<mem_region_t> dest, size_t chunk_size) {
     try {
         assert(!data_object.is_none() && "Data object is not registered");
         assert(dest != nullptr && "Destination region cannot be null");

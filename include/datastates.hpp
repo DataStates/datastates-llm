@@ -7,12 +7,13 @@
 #include <string>
 #include <memory>
 #include "common/mem_region.hpp"
+#include "common/utils.hpp"
 
 namespace datastates {
 class core_t {
 public:
     virtual void ckpt(uint version, uint uid, const char* ptr, std::uint64_t size, std::uint64_t offset, std::string path) = 0;
-    virtual void ckpt_region(mem_region_t* m) = 0;
+    virtual void ckpt_region(std::shared_ptr<mem_region_t> m) = 0;
     virtual void restore(uint version, uint uid, const char* ptr, std::uint64_t size, std::uint64_t offset, std::string path) = 0;
     virtual void wait(bool persist=false) = 0;
     virtual void shutdown() = 0;

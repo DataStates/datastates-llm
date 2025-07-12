@@ -13,15 +13,27 @@ state_io_engine_impl_t::state_io_engine_impl_t(size_t host_cache_size, int gpu_i
 
 void state_io_engine_impl_t::ckpt(uint version, state_manager_t* state, std::string path) {
     try {
-        DBG("Going to checkpoint state...");
-        for (TIER_TYPES tier : {GPU_TIER, HOST_PINNED_TIER, HOST_UNPINNED_TIER}) {
+        DBG("Checkpointing state to path: " << path << " with alignment of " << get_fs_block_alignment());
+        for (TIER_TYPES tier : {GPU_TIER, HOST_UNPINNED_TIER, HOST_PINNED_TIER}) {
             while (state->has_next_chunk(tier)) {
-                mem_region_t* m = new mem_region_t(version, 0 /*region_id*/, nullptr /*ptr*/, 0 /*size*/ , 0 /*file_offset*/, path, tier);
+                std::shared_ptr<mem_region_t> m = std::make_shared<mem_region_t>(version, 0 /*region_id*/, nullptr /*ptr*/, 0 /*size*/ , 0 /*file_offset*/, path, tier);
                 state->get_next_chunk(tier, m);
                 DBG("Going to checkpoint memory region with UID " << m->uid << " of size " << m->size << " at file offset " << m->file_start_offset);
                 core_engine->ckpt_region(m);
             }
         }
+        // Write at the top of the file, where to find the header.
+        size_t header_begin_offset = state->get_file_offset();
+        char* ptr = reinterpret_cast<char*>(&header_begin_offset);
+        std::shared_ptr<mem_region_t> m_header_offset = std::make_shared<mem_region_t>(version, state->get_state_provider_uid(), ptr, sizeof(size_t), header_begin_offset, path, HOST_UNPINNED_TIER);
+        core_engine->ckpt_region(m_header_offset);
+
+        // Write the header to the file.
+        std::string header = state->get_state_meta().data();
+        size_t header_size = header.size();
+        char* header_ptr = header.data();
+        std::shared_ptr<mem_region_t> m_header = std::make_shared<mem_region_t>(version, state->get_state_provider_uid(), header_ptr, header_size, header_begin_offset, path, HOST_UNPINNED_TIER);
+        core_engine->ckpt_region(m_header);
     } catch (std::exception &e) {
         FATAL("Exception caught in ckpt." << e.what());
     }
@@ -48,7 +60,6 @@ void state_io_engine_impl_t::wait(state_manager_t* state, bool persist) {
 void state_io_engine_impl_t::shutdown() {
     try {
         DBG("Shutting down state I/O engine.");
-        core_engine->wait(true);
         core_engine->shutdown();
         DBG("Deleting core engine.");
         return;
@@ -60,6 +71,8 @@ void state_io_engine_impl_t::shutdown() {
 state_io_engine_impl_t::~state_io_engine_impl_t() {
     try {
         shutdown();
+        // delete core_engine;
+        // free(state_io_engine_instance);
     } catch (std::exception &e) {
         FATAL("Exception caught in destructor." << e.what());
     }

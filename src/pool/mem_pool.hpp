@@ -22,19 +22,19 @@ class mem_pool_t {
     int device_type_ = -1;
     std::mutex mem_mutex_;
     std::condition_variable mem_cv_;
-    std::deque<mem_region_t*> mem_q_;
+    std::deque<std::shared_ptr<mem_region_t>> mem_q_;
     std::map<uint64_t, size_t> alloc_map_;
     bool is_active = true;
     int rank_ = -1;
     void print_trace_();
-    void assign_(mem_region_t* m);
+    void assign_(std::shared_ptr<mem_region_t> m);
 public:
     mem_pool_t(char* start_ptr, size_t total_size, int rank=-1, TIER_TYPES device_type = HOST_PINNED_TIER);
     ~mem_pool_t();    
-    void allocate(mem_region_t* m);
+    void allocate(std::shared_ptr<mem_region_t> m);
     size_t get_free_size();
     size_t get_capacity();
-    void deallocate(mem_region_t* m);
+    void deallocate(std::shared_ptr<mem_region_t> m);
 };
 
 
