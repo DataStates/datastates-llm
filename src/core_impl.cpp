@@ -86,12 +86,13 @@ void core_impl_t::wait(bool persist) {
     }
 }
 
-void core_impl_t::shutdown() {
+std::string core_impl_t::shutdown() {
     try {
         wait(true);
         delete gpu_tier;
         delete host_tier;
-        return;
+        perf_profiler_t& perf_profiler = perf_profiler_t::get_instance();
+        return perf_profiler.report();
     } catch (std::exception &e) {
         FATAL("Exception caught in shutdown." << e.what());
     }

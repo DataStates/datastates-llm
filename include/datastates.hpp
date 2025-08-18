@@ -16,7 +16,7 @@ public:
     virtual void ckpt_region(std::shared_ptr<mem_region_t> m) = 0;
     virtual void restore(uint version, uint uid, const char* ptr, std::uint64_t size, std::uint64_t offset, std::string path) = 0;
     virtual void wait(bool persist=false) = 0;
-    virtual void shutdown() = 0;
+    virtual std::string shutdown() = 0;
     virtual ~core_t() = default;
 };
 

@@ -8,6 +8,8 @@
 #include <deque>
 #include <condition_variable>
 
+namespace datastates {
+
 template <typename T>
 class atomic_queue_t {
     std::deque<T> q;
@@ -65,5 +67,7 @@ public:
         return is_active;
     };
 };
+
+}
 
 #endif //__DATASTATES_ATOMIC_QUEUE_HPP

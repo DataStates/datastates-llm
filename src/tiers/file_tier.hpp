@@ -3,7 +3,7 @@
 
 #include "base_tier.hpp"
 #include <cuda_runtime.h>
-
+using namespace datastates;
 class file_tier_t : public base_tier_t {
 public:
     file_tier_t(int gpu_id, unsigned int num_threads, size_t total_size);

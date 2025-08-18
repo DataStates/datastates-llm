@@ -32,11 +32,10 @@ inline std::mutex& log_mutex() {
     std::abort(); \
 }
 
-// #define __PROFILE
+#define __PROFILE
 #ifndef __PROFILE
     #define TIMER_START(t) {}
     #define TIMER_STOP(t, m, s) {}
-    #define DBG(m) {}
 #else
     static auto beginning = std::chrono::steady_clock::now();
     #define TIMER_START(timer) auto timer = std::chrono::steady_clock::now();
@@ -44,10 +43,15 @@ inline std::mutex& log_mutex() {
         auto now = std::chrono::steady_clock::now();\
         auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(now - timer).count(); \
         auto t = std::chrono::duration_cast<std::chrono::seconds>(now - beginning).count();\
-        std::cout << "[BENCHMARK " << t << "] [" << __FILE__ << ":" << __LINE__ << ":" \
-            << __FUNCTION__ << "] [time elapsed: " << d << " ns] " << message \
-            << " [THRU: " << (double)((double)size/(double)d) << "]" << std::endl; \
+        std::cout << "[BENCHMARK] [" << message << "] [time elapsed: " << d << " ns] [size: " << size \
+            << "] [throughput: " << (double)((double)size/(double)d) << "]" << std::endl; \
     }
+#endif
+
+// #define __DBG
+#ifndef __DBG
+    #define DBG(m) {}
+#else
     #define DBG(message) MESSAGE("DEBUG", message)
 #endif
 

@@ -2,6 +2,7 @@
 #include "datastates.hpp"
 #include "common/utils.hpp"
 #include "core_impl.hpp"
+#include "common/perf_profiler.hpp"
 
 size_t FS_BLOCK_SIZE_ALIGNMENT = 4096; // Set default filesystem block size alignment
 namespace datastates {

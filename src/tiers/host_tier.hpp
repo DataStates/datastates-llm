@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <numeric>
 
+using namespace datastates;
 class host_tier_t : public base_tier_t {
     char* start_ptr_ = nullptr;
     size_t pwrite_loop_(int fd, const char* ptr, size_t size, size_t file_start_offset);

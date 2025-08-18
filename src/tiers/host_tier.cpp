@@ -33,6 +33,7 @@ void host_tier_t::flush(std::shared_ptr<mem_region_t> src) {
     assert((src->curr_tier_type == HOST_PINNED_TIER || src->curr_tier_type == HOST_UNPINNED_TIER) && "[HOST_TIER] Source to flush from should be a host memory type.");
     assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only flush from host to file supported.");
     flush_q.push(src);
+    perf_profiler.record_event(src, HOST_WAIT_START);
 }
 
 void host_tier_t::fetch(std::shared_ptr<mem_region_t> src) {
@@ -54,6 +55,8 @@ void host_tier_t::flush_io_() {
         if (res == false || is_active == false)
             return;
         auto src = flush_q.get_front();
+        perf_profiler.record_event(src, HOST_WAIT_END);
+        perf_profiler.record_event(src, HOST_START);
         int fd = open(src->path.c_str(), O_WRONLY | O_CREAT, 0644);
         if(src->aligned_size > 0 && get_fs_block_alignment() > 1) { // FS_BLOCK_SIZE_ALIGNMENT==1 means no alignment
             if (!is_aligned(reinterpret_cast<uintptr_t>(src->ptr))) {
@@ -88,6 +91,7 @@ void host_tier_t::flush_io_() {
         }
         close(fd);
         mem_pool->deallocate(src);
+        perf_profiler.record_event(src, HOST_END);
         flush_q.pop();
     }
 }

@@ -6,12 +6,12 @@
 #include <mutex>
 #include <condition_variable>
 #include <deque>
-#include <cassert>
 #include <map>
 #include "common/defs.hpp"
 #include "common/mem_region.hpp"
 #include "common/utils.hpp"
 
+namespace datastates {
 class mem_pool_t {
     char* start_ptr_ = nullptr;
     std::atomic<size_t> total_size_{0};
@@ -37,5 +37,6 @@ public:
     void deallocate(std::shared_ptr<mem_region_t> m);
 };
 
+}
 
 #endif //__DATASTATES_POOL_ALLOCATOR_HPP

@@ -1,4 +1,5 @@
 #include "mem_pool.hpp"
+using namespace datastates;
 
 mem_pool_t::mem_pool_t(char* start_ptr, size_t total_size, int rank, TIER_TYPES device_type): start_ptr_(start_ptr), 
     total_size_(total_size), rank_(rank), device_type_(device_type) {

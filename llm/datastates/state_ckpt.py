@@ -13,6 +13,8 @@ from datastates.datastates_core import *
 from .helper import parse_config, get_checkpoint_version, HOST_CACHE_SIZE, CKPT_PARSER_THREADS
 from .utils import get_logger
 import atexit
+import fasteners
+import json
 
 SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
@@ -35,6 +37,7 @@ class CheckpointEngine:
             
             self.logger = get_logger(__name__)
             self.last_ckpt_version = -1
+            self.profile_logs = {}
             # When sigkill is used to stop the process after successful training,
             # the shutdown will not be called, so we register it to atexit
             atexit.register(self.shutdown) 
@@ -45,6 +48,7 @@ class CheckpointEngine:
 
     def save_background(self, state_dict: Union[dict, OrderedDict], path: str):
         try:
+            profile_log = {}
             version = get_checkpoint_version(path, self.last_ckpt_version)
             self.last_ckpt_version = version
             header = {}
@@ -90,13 +94,25 @@ class CheckpointEngine:
                 except Exception as exc:
                     raise Exception(f"[DataStates.llm][ERROR] Cannot parse {key}, exception: {exc}, data is {data}")
 
+            t = time.time()
             lean_state_dict = _parse_state("", state_dict)
+            profile_log["parse_time"] = time.time() - t
+            t = time.time()
             lean_state_dict = pickle.dumps(lean_state_dict, protocol=pickle.HIGHEST_PROTOCOL)
+            profile_log["pickle_time"] = time.time() - t
             _end_tensor_offset += len(lean_state_dict)
             self.sm[version][path].add_var(lean_state_dict, "datastates_metadata")
 
-            
+            t = time.time()
             self.ckpt_engine.ckpt(version, self.sm[version][path], path)
+            profile_log["ckpt_time"] = time.time() - t
+            profile_log["path"] = path
+            profile_log["version"] = version
+            profile_log["size"] = _end_tensor_offset
+            profile_log["num_tensors"] = len(async_copies)
+            if version not in self.profile_logs:
+                self.profile_logs[version] = {}
+            self.profile_logs[version][path] = profile_log
             return None
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From DataStates save_background, generated exception: {exc}")
@@ -184,6 +200,7 @@ class CheckpointEngine:
             assert self.last_ckpt_version in self.sm, f"[DataStates.llm] Last checkpoint version {self.last_ckpt_version} not found in state manager."
             for k, mgr in self.sm[self.last_ckpt_version].items():
                 self.ckpt_engine.wait(mgr, persist)
+            self.profile_logs[self.last_ckpt_version][f"wait_time_persist_{persist}"] = time.time() - t
             self.logger.info(f"<TIMER:wait-persist-{persist},{time.time()-t}> <nmgrs: {len(self.sm[self.last_ckpt_version])}> <version: {self.last_ckpt_version}>")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")
@@ -201,7 +218,19 @@ class CheckpointEngine:
                     self.sm[v][p].release()
                     del self.sm[v][p]
             self.sm.clear()
-            del self.ckpt_engine
+            perf_profile_file = self.ckpt_engine.shutdown()
+            try:
+                with open(perf_profile_file, "r", encoding="utf-8", errors="replace") as f:
+                    self.profile_logs["overall"] = str(f.read())
+            except Exception as e:
+                self.logger.error(f"[DataStates.llm][ERROR] From shutdown, generated exception: {e}")
+            perf_out = {self.rank: self.profile_logs}
+            rw_lock = fasteners.InterProcessReaderWriterLock('/dev/shm/state_ckpt.lock')  
+            with rw_lock.write_lock():
+                print("<"*50)
+                # print(json.dumps(perf_out))
+                print(perf_out)
+                print(">"*50)
             # self.executor.shutdown(True)
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From shutdown, generated exception: {exc}")

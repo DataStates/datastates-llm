@@ -23,7 +23,7 @@ public:
     void ckpt(uint version, state_manager_t* state, std::string path) override;
     void restore(uint version, state_manager_t* state, std::string path) override;
     void wait(state_manager_t* state, bool persist=false) override;
-    void shutdown() override;
+    std::string shutdown() override;
 
     ~state_io_engine_impl_t();
 };

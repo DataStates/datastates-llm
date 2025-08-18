@@ -57,12 +57,10 @@ void state_io_engine_impl_t::wait(state_manager_t* state, bool persist) {
     }
 }
 
-void state_io_engine_impl_t::shutdown() {
+std::string state_io_engine_impl_t::shutdown() {
     try {
         DBG("Shutting down state I/O engine.");
-        core_engine->shutdown();
-        DBG("Deleting core engine.");
-        return;
+        return core_engine->shutdown();
     } catch (std::exception &e) {
         FATAL("Exception caught in shutdown." << e.what());
     }

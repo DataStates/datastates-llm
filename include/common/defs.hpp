@@ -3,7 +3,9 @@
 #include <cstddef>
 #include <cuda_runtime.h>
 
-typedef unsigned int uint;
+namespace datastates {
+
+typedef unsigned long long int uint;
 enum TIER_TYPES: int {
     HOST_UNPINNED_TIER=cudaMemoryTypeUnregistered,          // cudaMemoryTypeUnregistered = 0
     HOST_PINNED_TIER=cudaMemoryTypeHost,                    // cudaMemoryTypeHost = 1
@@ -30,5 +32,7 @@ enum STATE_PROVIDER_CHUNK_STATUS: int {
 
 const size_t STATE_PROVIDER_DEFAULT_CHUNK_SIZE = 64 * (1<<20);
 const size_t MAX_FILE_WRITE_SIZE = 1 << 30; // 1 GB
+
+}
 
 #endif // __DATASTATES_DEFS_HPP

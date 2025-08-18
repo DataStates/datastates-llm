@@ -4,8 +4,9 @@
 #include "common/atomic_queue.hpp"
 #include "pool/mem_pool.hpp"
 #include <thread>
+#include "common/perf_profiler.hpp"
 
-
+namespace datastates {
 class base_tier_t {
 protected:
     // We keep a separate GPU ID because even for host-memory, we need to first `cudaSetDevice` 
@@ -20,6 +21,7 @@ protected:
     std::atomic<bool> is_active{true};
     atomic_queue_t<std::shared_ptr<mem_region_t>> flush_q;
     atomic_queue_t<std::shared_ptr<mem_region_t>> fetch_q;
+    perf_profiler_t& perf_profiler = perf_profiler_t::get_instance();
 public:
     TIER_TYPES tier_type_;
     mem_pool_t* mem_pool = nullptr;
@@ -35,5 +37,7 @@ public:
     virtual void flush_io_() = 0;
     virtual void fetch_io_() = 0;
 };
+
+}
 
 #endif //__DATASTATES_BASE_TIER_HPP

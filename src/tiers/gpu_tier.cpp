@@ -34,6 +34,7 @@ void gpu_tier_t::flush(std::shared_ptr<mem_region_t> m) {
     assert((m->curr_tier_type == GPU_TIER) && "[GPU_TIER] Source to flush from should be a gpu memory type.");
     assert((successor_tier_->tier_type_ == HOST_PINNED_TIER) && "[GPU_TIER] Only flush from gpu to pinned host memory is supported.");
     flush_q.push(m);
+    perf_profiler.record_event(m, GPU_WAIT_START);
 }
 
 void gpu_tier_t::fetch(std::shared_ptr<mem_region_t> m) {
@@ -55,14 +56,17 @@ void gpu_tier_t::flush_io_() {
         if (res == false || is_active == false)
             return;
         auto src = flush_q.get_front();
+        perf_profiler.record_event(src, GPU_WAIT_END);
         DBG("In GPU tier got src...." << successor_tier_->tier_type_ );
         auto dest = std::make_shared<mem_region_t>(src, successor_tier_->tier_type_);
         successor_tier_->mem_pool->allocate(dest);
+        perf_profiler.record_event(src, GPU_START);
         checkCuda(cudaMemcpyAsync(const_cast<void*>(static_cast<const void*>(dest->ptr)), static_cast<const void*>(src->ptr), src->size, cudaMemcpyDeviceToHost, flush_stream));
         checkCuda(cudaStreamSynchronize(flush_stream));
         DBG("[GPU_TIER] Flushed from GPU to host.");
         successor_tier_->flush(dest);
         mem_pool->deallocate(src);
+        perf_profiler.record_event(src, GPU_END);
         flush_q.pop();
     }
 }

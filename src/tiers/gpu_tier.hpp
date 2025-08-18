@@ -3,7 +3,7 @@
 
 #include "base_tier.hpp"
 #include <cuda_runtime.h>
-
+using namespace datastates;
 class gpu_tier_t : public base_tier_t {
     char* start_ptr_ = nullptr;
     cudaStream_t flush_stream;
