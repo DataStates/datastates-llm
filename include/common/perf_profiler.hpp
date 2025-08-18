@@ -147,20 +147,19 @@ public:
 
         for (const auto& [uid, info] : perf_profiles) {
             try {
-                auto path = info.path;
-                std::cout << "Reporting performance for: " << path << " where GPU wait starts at " << info.gpu_wait_start_time << " and ends at " << info.gpu_wait_end_time << std::endl;
+                std::string path = info.path;
                 if (!j_report.contains(path)) {
                     j_report[path] = nlohmann::json{
-                        {"gpu_wait_time", 0},
-                        {"host_wait_time", 0},
-                        {"gpu_time", 0},
-                        {"host_time", 0}
+                        {"gpu_wait_time", 0ULL},
+                        {"host_wait_time", 0ULL},
+                        {"gpu_time", 0ULL},
+                        {"host_time", 0ULL}
                     };
                 }
-                j_report[path]["gpu_wait_time"] += info.gpu_wait_end_time - info.gpu_wait_start_time;
-                j_report[path]["host_wait_time"] += info.host_wait_end_time - info.host_wait_start_time;
-                j_report[path]["gpu_time"] += info.gpu_end_time - info.gpu_start_time;
-                j_report[path]["host_time"] += info.host_end_time - info.host_start_time;
+                j_report[path]["gpu_wait_time"] = j_report[path]["gpu_wait_time"].get<uint64_t>()  + (info.gpu_wait_end_time - info.gpu_wait_start_time);
+                j_report[path]["host_wait_time"] = j_report[path]["host_wait_time"].get<uint64_t>()  + (info.host_wait_end_time - info.host_wait_start_time);
+                j_report[path]["gpu_time"] = j_report[path]["gpu_time"].get<uint64_t>()  + (info.gpu_end_time - info.gpu_start_time);
+                j_report[path]["host_time"] = j_report[path]["host_time"].get<uint64_t>()  + (info.host_end_time - info.host_start_time);
             } catch (const std::exception& e) {
                 std::cerr << "Error reporting performance for UID " << uid << ": " << e.what() << std::endl;
             }

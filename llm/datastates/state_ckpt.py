@@ -6,7 +6,6 @@ import sys
 import os
 from typing import Union
 import pickle
-import json
 import ctypes
 import numpy as np
 from datastates.datastates_core import *
@@ -29,12 +28,8 @@ class CheckpointEngine:
             datastates_config   = parse_config(runtime_config)
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
-            # concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
-            # self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
-            self.ckpt_engine = create_io_engine(host_cache_size, cuda_device, self.rank)
-            # set_fs_block_alignment(1)
+            self.ckpt_engine    = create_io_engine(host_cache_size, cuda_device, self.rank)
             self.sm = {}
-            
             self.logger = get_logger(__name__)
             self.last_ckpt_version = -1
             self.profile_logs = {}
@@ -54,7 +49,7 @@ class CheckpointEngine:
             header = {}
             if version not in self.sm:
                 self.sm[version] = {}
-            assert path not in self.sm[version], f"[DataStates.llm] Path {path} already exists in state manager for version {version}."
+            assert path not in self.sm[version], f"[DataStates.llm] Path {path} already exists in state manager for version {version}, having keys {self.sm[version].keys()}"
             self.sm[version][path] = state_manager()
             async_copies = {}
             _start_tensor_offset = 0
@@ -219,19 +214,21 @@ class CheckpointEngine:
                     del self.sm[v][p]
             self.sm.clear()
             perf_profile_file = self.ckpt_engine.shutdown()
-            try:
-                with open(perf_profile_file, "r", encoding="utf-8", errors="replace") as f:
-                    self.profile_logs["overall"] = str(f.read())
-            except Exception as e:
-                self.logger.error(f"[DataStates.llm][ERROR] From shutdown, generated exception: {e}")
+            async_profiles = {}
+            with open(perf_profile_file, "r", encoding="utf-8", errors="replace") as f:
+                async_profiles = json.load(f)
+            for path, v in async_profiles.items():
+                version = get_checkpoint_version(path)
+                self.profile_logs[version][path].update(v)
+                del self.profile_logs[version][path]['path']
+                del self.profile_logs[version][path]['version']
+
             perf_out = {self.rank: self.profile_logs}
             rw_lock = fasteners.InterProcessReaderWriterLock('/dev/shm/state_ckpt.lock')  
             with rw_lock.write_lock():
                 print("<"*50)
-                # print(json.dumps(perf_out))
                 print(perf_out)
                 print(">"*50)
-            # self.executor.shutdown(True)
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From shutdown, generated exception: {exc}")
             sys.exit(-1)
