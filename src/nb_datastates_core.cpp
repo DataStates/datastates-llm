@@ -50,8 +50,8 @@ NB_MODULE(datastates_core, m) {
              "version"_a, "region_uid"_a, "obj"_a, "size"_a, "offset"_a, "path"_a)
         .def("restore", &restore_wrapper,
              "version"_a, "region_uid"_a, "obj"_a, "size"_a, "offset"_a, "path"_a)
-        // .def("ckpt_state", )
         .def("wait", &datastates::core_t::wait, "persist"_a = false)
+        .def("get_queue_stats", &datastates::core_t::get_queue_stats, "for_flush_queue"_a = true)
         .def("shutdown", &datastates::core_t::shutdown);
 
     m.def("dstates_engine", &datastates::dstates_engine,
@@ -80,6 +80,8 @@ NB_MODULE(datastates_core, m) {
              "Restore a state provider's data from a checkpoint.")
         .def("wait", &datastates::state_io_engine_t::wait,
              "state"_a, "persist"_a = false, "Wait for all operations to complete.")
+        .def("get_queue_stats", &datastates::state_io_engine_t::get_queue_stats,
+             "for_flush_queue"_a = true, "Get the current queue statistics.")
         .def("shutdown", &datastates::state_io_engine_t::shutdown,
              "Shutdown the state I/O engine.");
 

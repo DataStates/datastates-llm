@@ -15,6 +15,7 @@ public:
     virtual void restore(uint version, state_manager_t* state, std::string path) = 0;
     virtual void wait(state_manager_t* state, bool persist=false) = 0;
     virtual std::string shutdown() = 0;
+    virtual std::string get_queue_stats(bool for_flush_queue=true) = 0;
     virtual ~state_io_engine_t() = default;
 };
 static state_io_engine_t* state_io_engine_instance = nullptr;

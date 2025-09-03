@@ -26,6 +26,7 @@ public:
     void ckpt_region(std::shared_ptr<mem_region_t> m) override;
     void restore(uint version, uint region_id, const char* ptr, std::uint64_t size, std::uint64_t offset, std::string path) override;
     void wait(bool persist=false) override;
+    std::string get_queue_stats(bool for_flush_queue=true) override;
     std::string shutdown() override;
     ~core_impl_t();
 };

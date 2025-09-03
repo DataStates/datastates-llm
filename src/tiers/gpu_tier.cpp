@@ -18,15 +18,16 @@ gpu_tier_t::gpu_tier_t(int gpu_id, unsigned int num_threads, size_t total_size):
 gpu_tier_t::~gpu_tier_t() {
     flush_q.wait_for_completion();
     fetch_q.wait_for_completion();
-    checkCuda(cudaStreamSynchronize(flush_stream));
-    checkCuda(cudaStreamSynchronize(fetch_stream));
-    checkCuda(cudaStreamDestroy(flush_stream));
-    checkCuda(cudaStreamDestroy(fetch_stream));
     is_active = false;
     flush_q.set_inactive();
     fetch_q.set_inactive();
     flush_thread_.join();
     fetch_thread_.join();
+    checkCuda(cudaStreamSynchronize(flush_stream));
+    checkCuda(cudaStreamSynchronize(fetch_stream));
+    checkCuda(cudaStreamDestroy(flush_stream));
+    checkCuda(cudaStreamDestroy(fetch_stream));
+    
 }
 
 void gpu_tier_t::flush(std::shared_ptr<mem_region_t> m) {
@@ -53,7 +54,7 @@ void gpu_tier_t::flush_io_() {
     checkCuda(cudaSetDevice(gpu_id_));
     while(is_active) {
         bool res = flush_q.wait_for_item();
-        if (res == false || is_active == false)
+        if (res == false)
             return;
         auto src = flush_q.get_front();
         perf_profiler.record_event(src, GPU_WAIT_END);

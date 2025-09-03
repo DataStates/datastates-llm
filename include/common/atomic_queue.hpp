@@ -66,6 +66,9 @@ public:
         cv.notify_all();
         return is_active;
     };
+    size_t get_size() const {
+        return q.size();
+    };
 };
 
 }

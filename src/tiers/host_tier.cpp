@@ -19,13 +19,13 @@ host_tier_t::host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size
 host_tier_t::~host_tier_t() {
     flush_q.wait_for_completion();
     fetch_q.wait_for_completion();
-    checkCuda(cudaHostUnregister(start_ptr_));
-    free(start_ptr_);
     is_active = false;
     flush_q.set_inactive();
     fetch_q.set_inactive();
     flush_thread_.join();
     fetch_thread_.join();
+    checkCuda(cudaHostUnregister(start_ptr_));
+    free(start_ptr_);
 }
 
 void host_tier_t::flush(std::shared_ptr<mem_region_t> src) {
@@ -52,13 +52,13 @@ void host_tier_t::flush_io_() {
     checkCuda(cudaSetDevice(gpu_id_));
     while(is_active) {
         bool res = flush_q.wait_for_item();
-        if (res == false || is_active == false)
+        if (res == false)
             return;
         auto src = flush_q.get_front();
         perf_profiler.record_event(src, HOST_WAIT_END);
         perf_profiler.record_event(src, HOST_START);
         int fd = open(src->path.c_str(), O_WRONLY | O_CREAT, 0644);
-        if(src->aligned_size > 0 && get_fs_block_alignment() > 1) { // FS_BLOCK_SIZE_ALIGNMENT==1 means no alignment
+        if(src->aligned_size > 0 && src->size >= get_fs_block_alignment() && get_fs_block_alignment() > 1) { // FS_BLOCK_SIZE_ALIGNMENT==1 means no alignment
             if (!is_aligned(reinterpret_cast<uintptr_t>(src->ptr))) {
                 FATAL("[HOST_TIER] Pointer to flush should be aligned to get_fs_block_alignment() " 
                     + std::to_string(reinterpret_cast<uintptr_t>(src->ptr)) 
@@ -80,9 +80,13 @@ void host_tier_t::flush_io_() {
             FATAL("[HostFlush] Failed to open file: " + src->path + " Error: " + strerror(errno));
         }
         size_t file_size = src->aligned_size > 0 ? src->aligned_size : src->size;
-        ssize_t written = pwrite_loop_(fd, src->ptr, file_size, src->file_start_offset);
-        if (written < 0 || static_cast<size_t>(written) < file_size) {
-            FATAL("[HostFlush] Incomplete or failed write: written "  + std::to_string(written) + " instead of " + std::to_string(file_size) + " error: " + std::string(strerror(errno)));
+        try {
+            ssize_t written = pwrite_loop_(fd, src->ptr, file_size, src->file_start_offset);
+            if (written < 0 || static_cast<size_t>(written) < file_size) {
+                FATAL("[HostFlush] Incomplete or failed write: written "  + std::to_string(written) + " instead of " + std::to_string(file_size) + " error: " + std::string(strerror(errno)) + " for file " + src->path);
+            }
+        } catch (const std::exception& ex) {
+            FATAL("[HostFlush] Got exception " << ex.what() << " for file " << src->path);
         }
         //// Optional: fsync() to ensure consistency
         if (fsync(fd) != 0) {
@@ -127,7 +131,7 @@ size_t host_tier_t::pwrite_loop_(int fd, const char* ptr, size_t size, size_t fi
         size_t to_write = std::min(size - total_written, static_cast<size_t>(MAX_FILE_WRITE_SIZE));
         ssize_t written = pwrite(fd, ptr + total_written, to_write, file_start_offset + total_written);
         if (written < 0 || static_cast<size_t>(written) < to_write) {
-            FATAL("[HostFlush] Incomplete or failed write: written "  + std::to_string(total_written) + " instead of " + std::to_string(size) + " error: " + std::string(strerror(errno)));
+            throw std::runtime_error("[HostFlush] Incomplete or failed write: written "  + std::to_string(total_written) + " instead of " + std::to_string(size) + " error: " + std::string(strerror(errno)));
         }
         total_written += written;
     }

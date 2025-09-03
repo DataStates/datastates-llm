@@ -78,11 +78,23 @@ void core_impl_t::restore(uint version, uint uid, const char* ptr, const std::ui
 
 void core_impl_t::wait(bool persist) {
     try {
+        // if (persist) {
+        //     std::cout << " Waiting with stats " << get_queue_stats(true) << std::endl;
+        // }
         gpu_tier->wait_for_completion();
         if (persist)
             host_tier->wait_for_completion();
     }  catch (std::exception &e) {
         FATAL("Exception caught in wait D2H." << e.what());
+    }
+}
+
+std::string core_impl_t::get_queue_stats(bool for_flush_queue) {
+    try {
+        std::string stats = "Device: " + std::to_string(gpu_id) + ", GPU: " + std::to_string(gpu_tier->get_queue_size(for_flush_queue)) + ", Host: " + std::to_string(host_tier->get_queue_size(for_flush_queue));
+        return stats;
+    } catch (std::exception &e) {
+        FATAL("Exception caught in get_queue_stats." << e.what());
     }
 }
 

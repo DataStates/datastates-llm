@@ -17,6 +17,7 @@ public:
     virtual void restore(uint version, uint uid, const char* ptr, std::uint64_t size, std::uint64_t offset, std::string path) = 0;
     virtual void wait(bool persist=false) = 0;
     virtual std::string shutdown() = 0;
+    virtual std::string get_queue_stats(bool for_flush_queue=true) = 0;
     virtual ~core_t() = default;
 };
 

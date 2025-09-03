@@ -1,5 +1,5 @@
 import torch
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 import time
 from collections import OrderedDict, deque
 import sys
@@ -28,7 +28,10 @@ class CheckpointEngine:
             datastates_config   = parse_config(runtime_config)
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
+            concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
             self.ckpt_engine    = create_io_engine(host_cache_size, cuda_device, self.rank)
+            self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
+            self.executor_futures = []
             self.sm = {}
             self.logger = get_logger(__name__)
             self.last_ckpt_version = -1
@@ -108,7 +111,7 @@ class CheckpointEngine:
             if version not in self.profile_logs:
                 self.profile_logs[version] = {}
             self.profile_logs[version][path] = profile_log
-            return None
+            return True
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From DataStates save_background, generated exception: {exc}")
             sys.exit(-1)
@@ -117,7 +120,8 @@ class CheckpointEngine:
         try:
             if not isinstance(state_dict, (dict, OrderedDict)):
                 raise Exception(f"[DataStates.llm] state_dict given to checkpoint must be dictionary. Passed {type(state_dict)} instead for {path}.")
-            # self.executor.submit(self.save_background, state_dict, path)
+            # future = self.executor.submit(self.save_background, state_dict, path)
+            # self.executor_futures.append(future)
             self.save_background(state_dict, path)
             return True
         except Exception as exc:
@@ -182,7 +186,12 @@ class CheckpointEngine:
 
     def commit(self, tag):
         # self.wait()
-        # self.logger.info(f"[DataStates.llm] Checkpoint {tag} is ready now!")
+        done, not_done = wait(self.executor_futures, return_when=ALL_COMPLETED)
+        assert not not_done, f"Some futures did not complete: {not_done}"
+        assert all(future.result() for future in done), "Some futures failed"
+        self.executor_futures = []
+        queue_stats = self.ckpt_engine.get_queue_stats()
+        self.logger.info(f"[DataStates.llm] Checkpoint {tag} on rank {self.rank}: {queue_stats} is ready now!")
         # self.last_ckpt_version += 1
         return True
 
@@ -193,10 +202,16 @@ class CheckpointEngine:
                 return
             t = time.time()
             assert self.last_ckpt_version in self.sm, f"[DataStates.llm] Last checkpoint version {self.last_ckpt_version} not found in state manager."
-            for k, mgr in self.sm[self.last_ckpt_version].items():
-                self.ckpt_engine.wait(mgr, persist)
+            sms_to_wait_for = [self.last_ckpt_version]
+            if persist:
+                sms_to_wait_for = list(self.sm.keys())  
+            for smid in sms_to_wait_for:
+                for k, mgr in self.sm[smid].items():
+                    self.ckpt_engine.wait(mgr, persist)
             self.profile_logs[self.last_ckpt_version][f"wait_time_persist_{persist}"] = time.time() - t
-            self.logger.info(f"<TIMER:wait-persist-{persist},{time.time()-t}> <nmgrs: {len(self.sm[self.last_ckpt_version])}> <version: {self.last_ckpt_version}>")
+            queue_stats = self.ckpt_engine.get_queue_stats()
+            self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t} for {self.rank}: {queue_stats}")
+            self.logger.info(f"<TIMER:wait-persist-{persist},{time.time()-t}>")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")
             sys.exit(-1)
@@ -204,8 +219,10 @@ class CheckpointEngine:
     
     def shutdown(self):
         try:
+            self.commit("final-shutdown")
             self.logger.info("[DataStates.llm] Shutting down CheckpointEngine............")
             self.wait(True)
+            perf_profile_file = self.ckpt_engine.shutdown()
             versions = list(self.sm.keys())
             for v in versions:
                 providers = list(self.sm[v].keys())
@@ -213,7 +230,7 @@ class CheckpointEngine:
                     self.sm[v][p].release()
                     del self.sm[v][p]
             self.sm.clear()
-            perf_profile_file = self.ckpt_engine.shutdown()
+            
             async_profiles = {}
             with open(perf_profile_file, "r", encoding="utf-8", errors="replace") as f:
                 async_profiles = json.load(f)
@@ -229,6 +246,7 @@ class CheckpointEngine:
                 print("<"*50)
                 print(perf_out)
                 print(">"*50)
+            self.executor.shutdown(True)
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From shutdown, generated exception: {exc}")
             sys.exit(-1)

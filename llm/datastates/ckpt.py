@@ -1,5 +1,5 @@
 import torch
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 import time
 from collections import OrderedDict, deque
 import sys
@@ -29,12 +29,18 @@ class BaseCheckpointEngine:
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
             self.ckpt_engine = dstates_engine(host_cache_size, cuda_device, self.rank)
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
+            self.executor_futures = []
+
             self.logger = get_logger(__name__)
             self.last_ckpt_version = -1
 
         except Exception as exc:
             print(f"[DataStates.llm][ERROR] Got exception during DataStates init {exc}")
             sys.exit(-1)
+
+    def get_aligned_offset(self, offset: int) -> int:
+        ALIGNMENT=4096
+        return (offset + ALIGNMENT - 1) // ALIGNMENT * ALIGNMENT
 
     def save_background(self, state_dict: Union[dict, OrderedDict], path: str):
         try:
@@ -59,7 +65,7 @@ class BaseCheckpointEngine:
                             "tensor": data,
                             "file_offset": _start_tensor_offset
                         }
-                        _start_tensor_offset = _end_tensor_offset
+                        _start_tensor_offset = self.get_aligned_offset(_end_tensor_offset)
                         snapshot = f"TENSOR{KEY_SEPARATOR}{key}"
                     elif isinstance(data, list):
                         snapshot = [None]*len(data)
@@ -87,7 +93,7 @@ class BaseCheckpointEngine:
             
             # Launch Async copies
             for i, (_, v) in enumerate(async_copies.items()):
-                v["file_offset"] += metadata_size
+                v["file_offset"] += self.get_aligned_offset(metadata_size)
                 tensor_bytes = v["tensor"].numel()*v["tensor"].element_size()
                 # print("Checkpointing now region ", i, " of size ", tensor_bytes, " on path ", path)
                 self.ckpt_engine.ckpt(version, i, v["tensor"], tensor_bytes, v["file_offset"], path)
@@ -100,7 +106,7 @@ class BaseCheckpointEngine:
                 f.seek(_start_tensor_offset+metadata_size)
                 f.write(lean_state_dict)           
             
-            return None
+            return True
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From DataStates save_background, generated exception: {exc}")
             sys.exit(-1)
@@ -109,8 +115,9 @@ class BaseCheckpointEngine:
         try:
             if not isinstance(state_dict, (dict, OrderedDict)):
                 raise Exception(f"[DataStates.llm] state_dict given to checkpoint must be dictionary. Passed {type(state_dict)} instead for {path}.")
-            self.executor.submit(self.save_background, state_dict, path)
-            # self.save_background(state_dict, path)
+            # future = self.executor.submit(self.save_background, state_dict, path)
+            # self.executor_futures.append(future)
+            self.save_background(state_dict, path)
             return True
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] Could not save {path}, exception: {exc}, data: {state_dict}")
@@ -170,7 +177,12 @@ class BaseCheckpointEngine:
 
     def commit(self, tag):
         # self.wait()
-        self.logger.info(f"[DataStates.llm] Checkpoint {tag} is ready now!")
+        done, not_done = wait(self.executor_futures, return_when=ALL_COMPLETED)
+        assert not not_done, f"Some futures did not complete: {not_done}"
+        assert all(future.result() for future in done), "Some futures failed"
+        self.executor_futures = []
+        queue_stats = self.ckpt_engine.get_queue_stats()
+        self.logger.info(f"[DataStates.llm] Checkpoint {tag} on rank {self.rank}: {queue_stats} is ready now!")
         self.last_ckpt_version += 1
         return True
 
@@ -178,7 +190,8 @@ class BaseCheckpointEngine:
         try:
             t = time.time()
             self.ckpt_engine.wait(persist)
-            # self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t}")
+            queue_stats = self.ckpt_engine.get_queue_stats()
+            self.logger.info(f"[DataStates.llm] Wait time in checkpointing engine {time.time()-t} for {self.rank}: {queue_stats}")
             self.logger.info(f"<TIMER:wait-persist-{persist},{time.time()-t}>")
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From wait, generated exception: {exc}")
@@ -186,4 +199,8 @@ class BaseCheckpointEngine:
         return 
     
     def __del__(self):
+        self.commit("final-shutdown")
+        self.wait(True)
         self.executor.shutdown(True)
+        self.ckpt_engine.shutdown()
+        

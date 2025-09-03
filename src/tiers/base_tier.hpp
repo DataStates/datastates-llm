@@ -31,6 +31,9 @@ public:
     virtual void flush(std::shared_ptr<mem_region_t> src) = 0;
     virtual void fetch(std::shared_ptr<mem_region_t> src) = 0;
     virtual void wait_for_completion() = 0;
+    size_t get_queue_size(bool for_flush_queue=true) const {
+        return for_flush_queue ? flush_q.get_size() : fetch_q.get_size();
+    };
     virtual void set_successor_tier(base_tier_t* tier) {
         successor_tier_  = tier;
     };

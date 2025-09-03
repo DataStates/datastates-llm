@@ -57,6 +57,14 @@ void state_io_engine_impl_t::wait(state_manager_t* state, bool persist) {
     }
 }
 
+std::string state_io_engine_impl_t::get_queue_stats(bool for_flush_queue) {
+    try {
+        return core_engine->get_queue_stats(for_flush_queue);
+    } catch (std::exception &e) {
+        FATAL("Exception caught in get_queue_stats." << e.what());
+    }
+}
+
 std::string state_io_engine_impl_t::shutdown() {
     try {
         DBG("Shutting down state I/O engine.");
