@@ -78,9 +78,6 @@ void core_impl_t::restore(uint version, uint uid, const char* ptr, const std::ui
 
 void core_impl_t::wait(bool persist) {
     try {
-        // if (persist) {
-        //     std::cout << " Waiting with stats " << get_queue_stats(true) << std::endl;
-        // }
         gpu_tier->wait_for_completion();
         if (persist)
             host_tier->wait_for_completion();
