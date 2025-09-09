@@ -31,8 +31,7 @@ enum STATE_PROVIDER_CHUNK_STATUS: int {
 };
 
 const size_t STATE_PROVIDER_DEFAULT_CHUNK_SIZE = 64 * (1<<20);
-const size_t MAX_FILE_WRITE_SIZE = 1 << 30; // 1 GB
-
+const size_t MAX_FILE_WRITE_SIZE = (1ULL << 29); // 512 MB
 }
 
 #endif // __DATASTATES_DEFS_HPP

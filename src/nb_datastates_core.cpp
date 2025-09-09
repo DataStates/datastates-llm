@@ -94,6 +94,10 @@ NB_MODULE(datastates_core, m) {
           "alignment"_a,
           "Set the filesystem block size alignment for file operations.");
 
+    m.def("set_io_uring", &set_io_uring,
+          "use_uring"_a,
+          "Set whether to use io_uring for asynchronous I/O operations.");
+
     m.def("get_fs_block_alignment", &get_fs_block_alignment,
           "Get the current filesystem block size alignment.");
 }

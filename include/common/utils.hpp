@@ -64,6 +64,12 @@ inline const size_t get_fs_block_alignment() {
     return FS_BLOCK_SIZE_ALIGNMENT;
 }
 
+extern bool USE_URING;
+inline bool set_io_uring(bool use_uring_flag) {
+    USE_URING = use_uring_flag;
+    return USE_URING;
+}
+
 inline size_t get_aligned_offset(size_t offset, size_t alignment = get_fs_block_alignment()) {
     return (offset + alignment - 1) / alignment * alignment;
 }

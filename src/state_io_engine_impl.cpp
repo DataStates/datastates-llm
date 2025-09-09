@@ -67,8 +67,15 @@ std::string state_io_engine_impl_t::get_queue_stats(bool for_flush_queue) {
 
 std::string state_io_engine_impl_t::shutdown() {
     try {
-        DBG("Shutting down state I/O engine.");
-        return core_engine->shutdown();
+        if (!core_engine) {
+            return "State I/O engine already shutdown.";
+        }
+        std::string res = core_engine->shutdown();
+        delete core_engine;
+        core_engine = nullptr;
+        free(state_io_engine_instance);
+        state_io_engine_instance = nullptr;
+        return res;
     } catch (std::exception &e) {
         FATAL("Exception caught in shutdown." << e.what());
     }
@@ -77,8 +84,6 @@ std::string state_io_engine_impl_t::shutdown() {
 state_io_engine_impl_t::~state_io_engine_impl_t() {
     try {
         shutdown();
-        // delete core_engine;
-        // free(state_io_engine_instance);
     } catch (std::exception &e) {
         FATAL("Exception caught in destructor." << e.what());
     }

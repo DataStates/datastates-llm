@@ -29,6 +29,7 @@ class CheckpointEngine:
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
+            set_io_uring(True)
             self.ckpt_engine    = create_io_engine(host_cache_size, cuda_device, self.rank)
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.executor_futures = []
@@ -38,7 +39,8 @@ class CheckpointEngine:
             self.profile_logs = {}
             # When sigkill is used to stop the process after successful training,
             # the shutdown will not be called, so we register it to atexit
-            atexit.register(self.shutdown) 
+            self._shut = False
+            # atexit.register(self.shutdown) 
 
         except Exception as exc:
             print(f"[DataStates.llm][ERROR] Got exception during DataStates init {exc}")
@@ -219,10 +221,12 @@ class CheckpointEngine:
     
     def shutdown(self):
         try:
+            if self._shut:
+                return
+            self._shut = True
             self.commit("final-shutdown")
             self.logger.info("[DataStates.llm] Shutting down CheckpointEngine............")
             self.wait(True)
-            perf_profile_file = self.ckpt_engine.shutdown()
             versions = list(self.sm.keys())
             for v in versions:
                 providers = list(self.sm[v].keys())
@@ -231,10 +235,15 @@ class CheckpointEngine:
                     del self.sm[v][p]
             self.sm.clear()
             
+            perf_profile_file = self.ckpt_engine.shutdown()
             async_profiles = {}
             with open(perf_profile_file, "r", encoding="utf-8", errors="replace") as f:
                 async_profiles = json.load(f)
             for path, v in async_profiles.items():
+                if path == "version_profiles":
+                    # This is a special key for performance profiles of the host flushing for async libraries (e.g., io_uring)
+                    self.profile_logs["version_profiles"] = v
+                    continue
                 version = get_checkpoint_version(path)
                 self.profile_logs[version][path].update(v)
                 del self.profile_logs[version][path]['path']
@@ -249,7 +258,9 @@ class CheckpointEngine:
             self.executor.shutdown(True)
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] From shutdown, generated exception: {exc}")
-            sys.exit(-1)
 
     def __del__(self):
-        self.shutdown()
+        try:
+            self.shutdown()
+        except Exception as exc:
+            self.logger.error(f"[DataStates.llm][ERROR] Got exception during DataStates destructor {exc}")

@@ -4,6 +4,9 @@ set(CMAKE_CXX_STANDARD 17)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings using nanobind" ON)
 
 find_package(CUDAToolkit REQUIRED)
+# Locate liburing: E.g., `export LIBURING_PATH=$HOME/softwares/liburing`
+find_library(LIBURING_LIB uring PATHS $ENV{LIBURING_PATH}/lib REQUIRED)
+find_path(LIBURING_INCLUDE liburing.h PATHS $ENV{LIBURING_PATH}/include REQUIRED)
 
 if(BUILD_PYTHON_BINDINGS)
     find_package(Python 3.8 COMPONENTS Interpreter Development REQUIRED)
@@ -26,8 +29,8 @@ file(GLOB_RECURSE CORE_SOURCES
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_library(datastates_core STATIC ${CORE_SOURCES})
 
-target_include_directories(datastates_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(datastates_core PUBLIC CUDA::cudart)
+target_include_directories(datastates_core PUBLIC ${PROJECT_SOURCE_DIR}/include ${LIBURING_INCLUDE})
+target_link_libraries(datastates_core PUBLIC CUDA::cudart ${LIBURING_LIB})
 
 install(DIRECTORY include/
     DESTINATION datastates/include

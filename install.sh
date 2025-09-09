@@ -2,6 +2,18 @@
 set -e
 set -o pipefail
 
+if [ -z "$CONDA_PREFIX" ]; then
+    echo "[ERROR] Please activate your conda environment before running this script."
+    exit 1
+fi
+
+if [ -z "$LIBURING_PATH" ]; then
+    echo "[ERROR] Please set the LIBURING_PATH environment variable to point to your liburing installation."
+    echo "E.g., export LIBURING_PATH=\$HOME/softwares/liburing"
+    echo "If you haven't installed liburing, please follow the instructions at https://github.com/axboe/liburing"
+    exit 1
+fi
+
 # Determine Python site-packages install location
 INSTALL_PATH=$(python3 -c "
 import os, sysconfig, site

@@ -97,11 +97,16 @@ std::string core_impl_t::get_queue_stats(bool for_flush_queue) {
 
 std::string core_impl_t::shutdown() {
     try {
-        wait(true);
-        delete gpu_tier;
-        delete host_tier;
-        perf_profiler_t& perf_profiler = perf_profiler_t::get_instance();
-        return perf_profiler.report();
+        if (gpu_tier) {
+            wait(true);
+            delete gpu_tier;
+            delete host_tier;
+            gpu_tier = nullptr;
+            host_tier = nullptr;
+            perf_profiler_t& perf_profiler = perf_profiler_t::get_instance();
+            return perf_profiler.report();
+        }
+        return "";
     } catch (std::exception &e) {
         FATAL("Exception caught in shutdown." << e.what());
     }

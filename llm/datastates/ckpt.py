@@ -15,6 +15,7 @@ from .utils import get_logger
 
 SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
+ALIGNMENT=1
 
 class BaseCheckpointEngine:
     def __init__(self, runtime_config={}, rank=0) -> None:
@@ -27,6 +28,8 @@ class BaseCheckpointEngine:
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
+            set_fs_block_alignment(ALIGNMENT)
+            set_io_uring(False)
             self.ckpt_engine = dstates_engine(host_cache_size, cuda_device, self.rank)
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.executor_futures = []
@@ -39,7 +42,6 @@ class BaseCheckpointEngine:
             sys.exit(-1)
 
     def get_aligned_offset(self, offset: int) -> int:
-        ALIGNMENT=4096
         return (offset + ALIGNMENT - 1) // ALIGNMENT * ALIGNMENT
 
     def save_background(self, state_dict: Union[dict, OrderedDict], path: str):

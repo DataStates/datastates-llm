@@ -12,11 +12,11 @@ namespace datastates {
 
 template <typename T>
 class atomic_queue_t {
-    std::deque<T> q;
     std::mutex mtx;
     std::condition_variable cv;
     std::atomic<bool> is_active = true;
 public:
+    std::deque<T> q;
     atomic_queue_t() {};
     ~atomic_queue_t() {};
     void push(T src) {

@@ -38,6 +38,8 @@ struct profile_info_t {
     uint host_wait_end_time = 0;   // Host wait end time in nanoseconds
     uint host_start_time = 0; // Host start time in nanoseconds
     uint host_end_time = 0;   // Host end time in nanoseconds
+    uint host_start_time_version = 0; // Host start time version
+    uint host_end_time_version = 0;   // Host end time version
     size_t size = 0; // Size of the memory region
     uint version = 0; // Version of the memory region
     uint uid = 0;     // Unique identifier for the memory region
@@ -144,7 +146,7 @@ public:
 
     std::string report() const {
         nlohmann::json j_report = nlohmann::json{};
-
+        j_report["version_profiles"] = nlohmann::json{};
         for (const auto& [uid, info] : perf_profiles) {
             try {
                 std::string path = info.path;
@@ -160,6 +162,20 @@ public:
                 j_report[path]["host_wait_time"] = j_report[path]["host_wait_time"].get<uint64_t>()  + (info.host_wait_end_time - info.host_wait_start_time);
                 j_report[path]["gpu_time"] = j_report[path]["gpu_time"].get<uint64_t>()  + (info.gpu_end_time - info.gpu_start_time);
                 j_report[path]["host_time"] = j_report[path]["host_time"].get<uint64_t>()  + (info.host_end_time - info.host_start_time);
+
+                // Maintain a the host time profile per version for async flushing libraries such as io_uring.
+                if (!j_report["version_profiles"].contains(std::to_string(info.version))) {
+                    j_report["version_profiles"][std::to_string(info.version)] = nlohmann::json{
+                        {"host_begin_time", std::numeric_limits<uint64_t>::max()},
+                        {"host_end_time", 0ULL}
+                    };
+                }
+                if (info.host_start_time > 0 && info.host_start_time < j_report["version_profiles"][std::to_string(info.version)]["host_begin_time"].get<uint64_t>()) {
+                    j_report["version_profiles"][std::to_string(info.version)]["host_begin_time"] = info.host_start_time;
+                }
+                if (info.host_end_time > 0 && info.host_end_time > j_report["version_profiles"][std::to_string(info.version)]["host_end_time"].get<uint64_t>()) {
+                    j_report["version_profiles"][std::to_string(info.version)]["host_end_time"] = info.host_end_time;
+                }
             } catch (const std::exception& e) {
                 std::cerr << "Error reporting performance for UID " << uid << ": " << e.what() << std::endl;
             }

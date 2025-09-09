@@ -27,7 +27,8 @@ gpu_tier_t::~gpu_tier_t() {
     checkCuda(cudaStreamSynchronize(fetch_stream));
     checkCuda(cudaStreamDestroy(flush_stream));
     checkCuda(cudaStreamDestroy(fetch_stream));
-    
+    checkCuda(cudaFree(start_ptr_));
+    delete mem_pool;
 }
 
 void gpu_tier_t::flush(std::shared_ptr<mem_region_t> m) {
