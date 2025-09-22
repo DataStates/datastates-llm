@@ -3,6 +3,7 @@
 
 #include "common/atomic_queue.hpp"
 #include "pool/mem_pool.hpp"
+#include "pool/mem_pool.hpp"
 #include <thread>
 #include "common/perf_profiler.hpp"
 
@@ -13,9 +14,10 @@ protected:
     // to map pinned-host memory to a given GPU ID, otherwise the CUDA context for this host-tier will
     // be generated on GPU-0
     int gpu_id_ = -1;
+    int rank_ = -1;
     unsigned int num_threads_ = 0;
     size_t total_size_ = 0;
-    base_tier_t* successor_tier_ = nullptr;
+    std::shared_ptr<base_tier_t> successor_tier_ = nullptr;
     std::thread flush_thread_;
     std::thread fetch_thread_;
     std::atomic<bool> is_active{true};
@@ -24,9 +26,9 @@ protected:
     perf_profiler_t& perf_profiler = perf_profiler_t::get_instance();
 public:
     TIER_TYPES tier_type_;
-    mem_pool_t* mem_pool = nullptr;
-    base_tier_t(TIER_TYPES tier_type, int gpu_id, unsigned int num_threads, size_t total_size): 
-        gpu_id_(gpu_id), num_threads_(num_threads), total_size_(total_size), tier_type_(tier_type) {};
+    std::shared_ptr<mem_pool_t> mem_pool = nullptr;
+    base_tier_t(TIER_TYPES tier_type, int gpu_id, unsigned int num_threads, size_t total_size, int rank): 
+        tier_type_(tier_type), gpu_id_(gpu_id), num_threads_(num_threads), total_size_(total_size), rank_(rank) {};
     virtual ~base_tier_t() {};
     virtual void flush(std::shared_ptr<mem_region_t> src) = 0;
     virtual void fetch(std::shared_ptr<mem_region_t> src) = 0;
@@ -34,7 +36,7 @@ public:
     size_t get_queue_size(bool for_flush_queue=true) const {
         return for_flush_queue ? flush_q.get_size() : fetch_q.get_size();
     };
-    virtual void set_successor_tier(base_tier_t* tier) {
+    virtual void set_successor_tier(std::shared_ptr<base_tier_t> tier) {
         successor_tier_  = tier;
     };
     virtual void flush_io_() = 0;

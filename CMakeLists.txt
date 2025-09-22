@@ -22,6 +22,7 @@ file(GLOB_RECURSE CORE_SOURCES
     src/pool/*.cpp
     src/tiers/*.cpp
     src/serializers/*.cpp
+    src/file_handlers/*.cpp
     src/core_impl.cpp
     src/datastates.cpp
 )

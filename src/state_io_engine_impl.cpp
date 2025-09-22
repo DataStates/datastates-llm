@@ -3,17 +3,17 @@
 
 namespace datastates {
 
-state_io_engine_impl_t::state_io_engine_impl_t(size_t host_cache_size, int gpu_id, int rank) {
+state_io_engine_impl_t::state_io_engine_impl_t(size_t host_cache_size, int gpu_id, int rank_, bool use_io_uring, size_t fs_block_alignment): 
+    rank(rank_), use_io_uring(use_io_uring), fs_block_alignment(fs_block_alignment) {
     try {
-        core_engine = dstates_engine(host_cache_size, gpu_id, rank);
+        core_engine = dstates_engine(host_cache_size, gpu_id, rank_, use_io_uring, fs_block_alignment);
     } catch(std::exception& e) {
         FATAL("Standard exception caught in datastates init: " << e.what());
     }
 }
 
-void state_io_engine_impl_t::ckpt(uint version, state_manager_t* state, std::string path) {
+void state_io_engine_impl_t::ckpt(std::uint64_t version, state_manager_t* state, std::string path) {
     try {
-        DBG("Checkpointing state to path: " << path << " with alignment of " << get_fs_block_alignment());
         for (TIER_TYPES tier : {GPU_TIER, HOST_UNPINNED_TIER, HOST_PINNED_TIER}) {
             while (state->has_next_chunk(tier)) {
                 std::shared_ptr<mem_region_t> m = std::make_shared<mem_region_t>(version, 0 /*region_id*/, nullptr /*ptr*/, 0 /*size*/ , 0 /*file_offset*/, path, tier);
@@ -40,7 +40,7 @@ void state_io_engine_impl_t::ckpt(uint version, state_manager_t* state, std::str
     return;
 }
 
-void state_io_engine_impl_t::restore(uint version, state_manager_t* state, std::string path) {
+void state_io_engine_impl_t::restore(std::uint64_t version, state_manager_t* state, std::string path) {
     try {
         FATAL("Restoring state is not yet implemented.");
     } catch (std::exception &e) {
@@ -73,8 +73,8 @@ std::string state_io_engine_impl_t::shutdown() {
         std::string res = core_engine->shutdown();
         delete core_engine;
         core_engine = nullptr;
-        free(state_io_engine_instance);
-        state_io_engine_instance = nullptr;
+        // free(state_io_engine_instance);
+        // state_io_engine_instance = nullptr;
         return res;
     } catch (std::exception &e) {
         FATAL("Exception caught in shutdown." << e.what());

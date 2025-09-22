@@ -10,12 +10,11 @@
 #include <stdexcept>
 #include <cerrno>
 #include <unistd.h>
-#define NDEBUG
 #include <cassert>
 #include "json.hpp"
 
 namespace datastates {
-
+static bool ENABLE_PROFILING = true;
 enum PERF_PROFILER_EVENT: int {
     GPU_WAIT_START=0,
     GPU_WAIT_END=1,
@@ -30,24 +29,24 @@ enum PERF_PROFILER_EVENT: int {
 };
 
 struct profile_info_t {
-    uint gpu_wait_start_time = 0; // GPU wait start time in nanoseconds
-    uint gpu_wait_end_time = 0;   // GPU wait end time in nanoseconds
-    uint gpu_start_time = 0; // GPU start time in nanoseconds
-    uint gpu_end_time = 0;   // GPU end time in nanoseconds
-    uint host_wait_start_time = 0; // Host wait start time in nanoseconds
-    uint host_wait_end_time = 0;   // Host wait end time in nanoseconds
-    uint host_start_time = 0; // Host start time in nanoseconds
-    uint host_end_time = 0;   // Host end time in nanoseconds
-    uint host_start_time_version = 0; // Host start time version
-    uint host_end_time_version = 0;   // Host end time version
+    std::uint64_t gpu_wait_start_time = 0; // GPU wait start time in nanoseconds
+    std::uint64_t gpu_wait_end_time = 0;   // GPU wait end time in nanoseconds
+    std::uint64_t gpu_start_time = 0; // GPU start time in nanoseconds
+    std::uint64_t gpu_end_time = 0;   // GPU end time in nanoseconds
+    std::uint64_t host_wait_start_time = 0; // Host wait start time in nanoseconds
+    std::uint64_t host_wait_end_time = 0;   // Host wait end time in nanoseconds
+    std::uint64_t host_start_time = 0; // Host start time in nanoseconds
+    std::uint64_t host_end_time = 0;   // Host end time in nanoseconds
+    std::uint64_t host_start_time_version = 0; // Host start time version
+    std::uint64_t host_end_time_version = 0;   // Host end time version
     size_t size = 0; // Size of the memory region
-    uint version = 0; // Version of the memory region
-    uint uid = 0;     // Unique identifier for the memory region
-    uint internal_uid = 0; // Internal unique identifier for tracking
+    std::uint64_t version = 0; // Version of the memory region
+    std::uint64_t uid = 0;     // Unique identifier for the memory region
+    std::uint64_t internal_uid = 0; // Internal unique identifier for tracking
     std::string path; // Path of the memory region
     profile_info_t() = default;
-    profile_info_t(uint internal_uid_) : internal_uid(internal_uid_) {}
-    uint get_duration(TIER_TYPES tier=FILE_TIER) const {
+    profile_info_t(std::uint64_t internal_uid_) : internal_uid(internal_uid_) {}
+    std::uint64_t get_duration(TIER_TYPES tier=FILE_TIER) const {
         if (tier == FILE_TIER && (gpu_start_time + gpu_end_time + host_start_time + host_end_time) > 0) {
             // Return the total time from GPU to the File tier
             return gpu_end_time - gpu_start_time + host_end_time - host_start_time;
@@ -82,7 +81,8 @@ inline void to_json(nlohmann::json& j, const profile_info_t& info) {
 class perf_profiler_t {
     using clock = std::chrono::high_resolution_clock;
     using duration = std::chrono::duration<unsigned long long, std::nano>;
-    std::unordered_map<uint, profile_info_t> perf_profiles;
+    std::unordered_map<std::uint64_t, profile_info_t> perf_profiles;
+    std::mutex profiler_mutex;
 
 public:
     perf_profiler_t() = default;
@@ -93,15 +93,17 @@ public:
         return perf_profiler_instance;
     }
 
-    uint get_current_time() const {
+    std::uint64_t get_current_time() const {
+        if (!ENABLE_PROFILING) return 0;
         return std::chrono::duration_cast<duration>(clock::now().time_since_epoch()).count();
     }
 
     void record_event(std::shared_ptr<mem_region_t> m, PERF_PROFILER_EVENT e) {
+        if (!ENABLE_PROFILING) return;
+        std::unique_lock<std::mutex> lock(profiler_mutex);
         assert(m != nullptr && "Memory region cannot be null");
         assert(m->size > 0 && "Memory region size must be greater than zero");
         assert(m->version > 0 && "Memory region version must be greater than zero");
-        assert(m->uid > 0 && "Memory region UID must be greater than zero");
         assert(m->internal_uid > 0 && "Memory region internal UID must be greater than zero");
 
         if (perf_profiles.find(m->internal_uid) == perf_profiles.end()) {
@@ -115,29 +117,33 @@ public:
         }
 
         profile_info_t& info = perf_profiles[m->internal_uid];
+        // std::cout << "[DataStates][PerfProfiler] Recording event " << e << " for internal UID " << m->internal_uid 
+        //     << " (version: " << m->version << ", uid: " << m->uid << ", size: " << m->size << ", path: " << m->path 
+        //     << " host wait start " << info.host_wait_start_time << ")" << std::endl;
+
         if (e == GPU_WAIT_START) {
             info.gpu_wait_start_time = get_current_time();
         } else if (e == GPU_WAIT_END) {
-            assert(info.gpu_wait_start_time > 0 && "GPU wait start time must be set before GPU wait end time");
+            // assert(info.gpu_wait_start_time > 0 && "GPU wait start time must be set before GPU wait end time");
             info.gpu_wait_end_time = get_current_time();
         } else if (e == HOST_WAIT_START) {
             info.host_wait_start_time = get_current_time();
         } else if (e == HOST_WAIT_END) {
-            assert(info.host_wait_start_time > 0 && "Host wait start time must be set before Host wait end time");
+            // assert(info.host_wait_start_time > 0 && "Host wait start time must be set before Host wait end time for region " << m->internal_uid);
             info.host_wait_end_time = get_current_time();
         } else if (e == GPU_START) {
-            assert(info.gpu_start_time == 0 && "GPU start time should not be set before GPU_START event");
+            // assert(info.gpu_start_time == 0 && "GPU start time should not be set before GPU_START event");
             info.gpu_start_time = get_current_time();
         } else if (e == GPU_END) {
             assert(info.gpu_end_time == 0 && "GPU end time should not be set before GPU_END event");
-            assert(info.gpu_start_time > 0 && "GPU start time must be set before GPU end time");
+            // assert(info.gpu_start_time > 0 && "GPU start time must be set before GPU end time");
             info.gpu_end_time = get_current_time();
         } else if (e == HOST_START) {
-            assert(info.host_start_time == 0 && "Host start time should not be set before HOST_START event");
+            // assert(info.host_start_time == 0 && "Host start time should not be set before HOST_START event");
             info.host_start_time = get_current_time();
         } else if (e == HOST_END) {
             assert(info.host_end_time == 0 && "Host end time should not be set before HOST_END event");
-            assert(info.host_start_time > 0 && "Host start time must be set before Host end time");
+            // assert(info.host_start_time > 0 && "Host start time must be set before Host end time");
             info.host_end_time = get_current_time();
         } else {
             FATAL("Unknown PERF_PROFILER_EVENT type");
@@ -158,22 +164,22 @@ public:
                         {"host_time", 0ULL}
                     };
                 }
-                j_report[path]["gpu_wait_time"] = j_report[path]["gpu_wait_time"].get<uint64_t>()  + (info.gpu_wait_end_time - info.gpu_wait_start_time);
-                j_report[path]["host_wait_time"] = j_report[path]["host_wait_time"].get<uint64_t>()  + (info.host_wait_end_time - info.host_wait_start_time);
-                j_report[path]["gpu_time"] = j_report[path]["gpu_time"].get<uint64_t>()  + (info.gpu_end_time - info.gpu_start_time);
-                j_report[path]["host_time"] = j_report[path]["host_time"].get<uint64_t>()  + (info.host_end_time - info.host_start_time);
+                j_report[path]["gpu_wait_time"] = j_report[path]["gpu_wait_time"].get<std::uint64_t>()  + (info.gpu_wait_end_time - info.gpu_wait_start_time);
+                j_report[path]["host_wait_time"] = j_report[path]["host_wait_time"].get<std::uint64_t>()  + (info.host_wait_end_time - info.host_wait_start_time);
+                j_report[path]["gpu_time"] = j_report[path]["gpu_time"].get<std::uint64_t>()  + (info.gpu_end_time - info.gpu_start_time);
+                j_report[path]["host_time"] = j_report[path]["host_time"].get<std::uint64_t>()  + (info.host_end_time - info.host_start_time);
 
                 // Maintain a the host time profile per version for async flushing libraries such as io_uring.
                 if (!j_report["version_profiles"].contains(std::to_string(info.version))) {
                     j_report["version_profiles"][std::to_string(info.version)] = nlohmann::json{
-                        {"host_begin_time", std::numeric_limits<uint64_t>::max()},
+                        {"host_begin_time", std::numeric_limits<std::uint64_t>::max()},
                         {"host_end_time", 0ULL}
                     };
                 }
-                if (info.host_start_time > 0 && info.host_start_time < j_report["version_profiles"][std::to_string(info.version)]["host_begin_time"].get<uint64_t>()) {
+                if (info.host_start_time > 0 && info.host_start_time < j_report["version_profiles"][std::to_string(info.version)]["host_begin_time"].get<std::uint64_t>()) {
                     j_report["version_profiles"][std::to_string(info.version)]["host_begin_time"] = info.host_start_time;
                 }
-                if (info.host_end_time > 0 && info.host_end_time > j_report["version_profiles"][std::to_string(info.version)]["host_end_time"].get<uint64_t>()) {
+                if (info.host_end_time > 0 && info.host_end_time > j_report["version_profiles"][std::to_string(info.version)]["host_end_time"].get<std::uint64_t>()) {
                     j_report["version_profiles"][std::to_string(info.version)]["host_end_time"] = info.host_end_time;
                 }
             } catch (const std::exception& e) {

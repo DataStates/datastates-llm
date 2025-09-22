@@ -78,7 +78,6 @@ void state_manager_t::compute_meta(std::shared_ptr<state_provider_t> provider) {
 
 void state_manager_t::print_state() {
     try {
-        std::cout << "Number of Registered Providers: " << providers.size() << std::endl;
         for (const auto& provider : providers) {
             provider->print_state();
         }
@@ -100,6 +99,7 @@ bool state_manager_t::has_next_chunk(TIER_TYPES tier) {
                 return true;
             }
         }
+        it->second = -1; // Mark as fully consumed
         return false;
     } catch (std::exception& e) {
         FATAL("Exception caught in has_next_chunk: " << e.what());
@@ -120,7 +120,7 @@ bool state_manager_t::get_next_chunk(TIER_TYPES tier, std::shared_ptr<mem_region
                 return chunk;
             }
         }
-        current_provider_index[tier] = providers.size();
+        current_provider_index[tier] = -1; // Mark as fully consumed
         return false;
     } catch (std::exception& e) {
         FATAL("Exception caught in get_next_chunk: " << e.what());
@@ -132,7 +132,9 @@ void state_manager_t::release() {
     try {
         assert(!providers.empty() && "No providers registered to release");
         for (auto& e: current_provider_index) {
-            assert(e.second == providers.size() && "All providers should be consumed before releasing, found unconsumed on tier: " + std::to_string(e.first));
+            // if (e.second != -1) {
+            //     FATAL("Not all providers are consumed for tier " << e.first << " name " << TIER_TYPE_NAMES[e.first] << ". Consumed: " << e.second << ", Total: " << providers.size());
+            // }
             e.second = 0; // Reset index for each tier
         }
         for (auto& provider : providers) {

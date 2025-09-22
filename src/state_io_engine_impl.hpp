@@ -18,10 +18,13 @@ namespace datastates {
 
 class state_io_engine_impl_t : public state_io_engine_t {
     core_t* core_engine = nullptr;
+    int rank = -1;
+    bool use_io_uring = true;
+    size_t fs_block_alignment = 4096;
 public:
-    state_io_engine_impl_t(size_t host_cache_size, int gpu_id, int rank = -1);
-    void ckpt(uint version, state_manager_t* state, std::string path) override;
-    void restore(uint version, state_manager_t* state, std::string path) override;
+    state_io_engine_impl_t(size_t host_cache_size, int gpu_id, int rank = -1, bool use_io_uring = false, size_t fs_block_alignment = 1);
+    void ckpt(std::uint64_t version, state_manager_t* state, std::string path) override;
+    void restore(std::uint64_t version, state_manager_t* state, std::string path) override;
     void wait(state_manager_t* state, bool persist=false) override;
     std::string get_queue_stats(bool for_flush_queue=true) override;
     std::string shutdown() override;

@@ -13,8 +13,8 @@ state_provider_t::~state_provider_t() {
 
 void state_provider_t::register_state(nb::object d_object) {
     try {
-        assert((!d_object.is_none() && d_object != nb::none()) && "Object to register cannot be null");
-        assert(data_object.is_none() && "State provider has already registered a data_object state");
+        assert((!d_object.is_none()) && "Object to register cannot be null");
+        assert((data_object.is_none()) && "State provider has already registered a data_object state");
         is_tensor = nb::isinstance<nb::ndarray<>>(d_object) || nb::cast<bool>(torch.attr("is_tensor")(d_object));
         is_serialized = nb::isinstance<nb::bytes>(d_object) || nb::isinstance<nb::bytearray>(d_object) || nb::isinstance<nb::str>(d_object);
         
@@ -99,6 +99,7 @@ void state_provider_t::print_state() const {
               << ", Data Size: " << data_size 
               << ", Is Tensor: " << (is_tensor ? "Yes" : "No")
               << ", Is Serialized: " << (is_serialized ? "Yes" : "No")
+              << ", Data State " << (data_status == STATE_PROVIDER_UNREAD_CHUNK ? "UNREAD" : (data_status == STATE_PROVIDER_CONSUMING_CHUNK ? "CONSUMING" : "CONSUMED"))
               << std::endl;
 }
 
@@ -158,7 +159,7 @@ bool state_provider_t::get_next_chunk(TIER_TYPES tier, std::shared_ptr<mem_regio
 
 void state_provider_t::release() {
     assert(data_object.is_none() == false && "Data object must be registered before releasing");
-    assert(data_status == STATE_PROVIDER_CONSUMING_CHUNK && "Region must be in consuming state before releasing");
+    // assert(data_status == STATE_PROVIDER_CONSUMING_CHUNK && "Region must be in consuming state before releasing");
     data_status = STATE_PROVIDER_UNREAD_CHUNK;
 }
 

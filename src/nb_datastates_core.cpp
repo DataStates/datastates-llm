@@ -57,6 +57,7 @@ NB_MODULE(datastates_core, m) {
     m.def("dstates_engine", &datastates::dstates_engine,
           nb::rv_policy::take_ownership,
           "host_cache_size"_a, "gpu_id"_a, "rank"_a = -1,
+          "use_io_uring"_a = false, "fs_block_alignment"_a = datastates::FS_BLOCK_SIZE_ALIGNMENT,
           "Create a new core engine instance.");
 
     // The following snippets pertain to the VLCC state-management system
@@ -88,15 +89,8 @@ NB_MODULE(datastates_core, m) {
     m.def("create_io_engine", &datastates::create_io_engine,
           nb::rv_policy::take_ownership,
           "host_cache_size"_a, "gpu_id"_a, "rank"_a = -1,
+          "use_io_uring"_a = false, "fs_block_alignment"_a = datastates::FS_BLOCK_SIZE_ALIGNMENT,
           "Create a new state I/O engine instance.");
-
-    m.def("set_fs_block_alignment", &set_fs_block_alignment,
-          "alignment"_a,
-          "Set the filesystem block size alignment for file operations.");
-
-    m.def("set_io_uring", &set_io_uring,
-          "use_uring"_a,
-          "Set whether to use io_uring for asynchronous I/O operations.");
 
     m.def("get_fs_block_alignment", &get_fs_block_alignment,
           "Get the current filesystem block size alignment.");

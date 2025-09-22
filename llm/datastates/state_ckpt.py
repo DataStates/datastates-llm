@@ -17,6 +17,7 @@ import json
 
 SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
+ALIGNMENT = 4096
 
 class CheckpointEngine:
     def __init__(self, runtime_config={}, rank=0) -> None:
@@ -29,8 +30,8 @@ class CheckpointEngine:
             host_cache_size     = int(datastates_config[HOST_CACHE_SIZE]*(1<<30))       # From GB to Bytes
             cuda_device         = int(torch.cuda.current_device())
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
-            set_io_uring(True)
-            self.ckpt_engine    = create_io_engine(host_cache_size, cuda_device, self.rank)
+            use_uring = True
+            self.ckpt_engine    = create_io_engine(host_cache_size, cuda_device, self.rank, use_uring)
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.executor_futures = []
             self.sm = {}
@@ -197,7 +198,7 @@ class CheckpointEngine:
         # self.last_ckpt_version += 1
         return True
 
-    def wait(self, persist=False):
+    def wait(self, persist=False, for_all=False):
         try:
             if not self.sm:
                 self.logger.info("[DataStates.llm] No checkpoints to wait for.")
@@ -205,7 +206,7 @@ class CheckpointEngine:
             t = time.time()
             assert self.last_ckpt_version in self.sm, f"[DataStates.llm] Last checkpoint version {self.last_ckpt_version} not found in state manager."
             sms_to_wait_for = [self.last_ckpt_version]
-            if persist:
+            if for_all:
                 sms_to_wait_for = list(self.sm.keys())  
             for smid in sms_to_wait_for:
                 for k, mgr in self.sm[smid].items():
@@ -224,15 +225,8 @@ class CheckpointEngine:
             if self._shut:
                 return
             self._shut = True
-            self.commit("final-shutdown")
             self.logger.info("[DataStates.llm] Shutting down CheckpointEngine............")
-            self.wait(True)
-            versions = list(self.sm.keys())
-            for v in versions:
-                providers = list(self.sm[v].keys())
-                for p in providers:
-                    self.sm[v][p].release()
-                    del self.sm[v][p]
+            self.wait(True, for_all=True)
             self.sm.clear()
             
             perf_profile_file = self.ckpt_engine.shutdown()

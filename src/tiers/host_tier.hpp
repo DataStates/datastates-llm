@@ -14,28 +14,18 @@
 #include <numeric>
 #include <stdexcept>
 #include <set>
-#include <liburing.h>
-
-
+#include "file_handlers/base_file_handler.hpp"
+#include "file_handlers/io_uring_handler.hpp"
+#include "file_handlers/pwrite_handler.hpp"
 
 using namespace datastates;
 class host_tier_t : public base_tier_t {
     char* start_ptr_ = nullptr;
-    size_t pwrite_loop_(int fd, const char* ptr, size_t size, size_t file_start_offset);
-    size_t flush_io_uring_(int fd, std::shared_ptr<mem_region_t> src);
-    void fsync_io_uring_();
     void flush_io_();
     void fetch_io_();
-    struct io_uring ring;
-    int last_version = -1;
-    int get_fd_(std::string path, bool is_odirect);
-    std::unordered_map<std::string, int> open_direct_files;
-    std::unordered_map<std::string, int> open_nondirect_files;
-    std::atomic<size_t> num_submitted = 0;
-    std::atomic<size_t> num_completed = 0;
-    atomic_queue_t<std::shared_ptr<mem_region_t>> pending_fsync_q;
+    std::shared_ptr<base_file_handler_t> file_handler = nullptr;
 public:
-    host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size);
+    host_tier_t(int gpu_id, unsigned int num_threads, size_t total_size, int rank=-1, bool use_io_uring=false);
     ~host_tier_t();
     void flush(std::shared_ptr<mem_region_t> m);
     void fetch(std::shared_ptr<mem_region_t> m);

@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <deque>
 #include <map>
+#include <unordered_set>
 #include "common/defs.hpp"
 #include "common/mem_region.hpp"
 #include "common/utils.hpp"
@@ -23,13 +24,15 @@ class mem_pool_t {
     std::mutex mem_mutex_;
     std::condition_variable mem_cv_;
     std::deque<std::shared_ptr<mem_region_t>> mem_q_;
-    std::map<uint64_t, size_t> alloc_map_;
     bool is_active = true;
     int rank_ = -1;
+    int gpu_id_ = -1;
+    std::map<std::uint64_t, size_t> alloc_map_;
     void print_trace_();
     void assign_(std::shared_ptr<mem_region_t> m);
+    std::unordered_set<std::uint64_t> deferred_deallocations_;
 public:
-    mem_pool_t(char* start_ptr, size_t total_size, int rank=-1, TIER_TYPES device_type = HOST_PINNED_TIER);
+    mem_pool_t(char* start_ptr, size_t total_size, int gpu_id=-1, int rank=-1, TIER_TYPES device_type = HOST_PINNED_TIER);
     ~mem_pool_t();    
     void allocate(std::shared_ptr<mem_region_t> m);
     size_t get_free_size();

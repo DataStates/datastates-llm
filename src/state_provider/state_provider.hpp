@@ -4,8 +4,6 @@
 #include <iostream>
 #include <string>
 #include <memory>
-#define NDEBUG
-#include <cassert>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>

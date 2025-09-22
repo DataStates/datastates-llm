@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <mutex>
 #include <chrono>
+#include <cassert>
 
 #define checkCuda(ans) { checkCudaFunc((ans), __FILE__, __LINE__); }
 inline void checkCudaFunc(cudaError_t code, const char *file, int line, bool abort=true) {
@@ -25,11 +26,19 @@ inline std::mutex& log_mutex() {
     std::cout << "[" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__ << "] " << message << std::endl; \
 }
 
-// #define MESSAGE(level, message) std::cout << "[" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__ << "] " << message << std::endl
-// #define MESSAGE(level, message) py::print("[", __FILE__, ":", __LINE__, ":", __FUNCTION__, "] ", message)
+#define COLOR_RED     "\033[1;31m"
+#define COLOR_YELLOW  "\033[1;33m"
+#define COLOR_RESET   "\033[0m"
+
 #define FATAL(message) {\
-    MESSAGE("FATAL", message);\
+    std::cout << COLOR_RED << " [!!ERROR!!] \t [" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__ << "] " \
+              << message << COLOR_RESET << std::endl << std::endl; \
     std::abort(); \
+}
+
+#define WARN(message) {\
+    std::cout << COLOR_YELLOW << " [!!WARN!!] \t [" << __FILE__ << ":" << __LINE__ << ":" << __FUNCTION__ << "] " \
+              << message << COLOR_RESET << std::endl; \
 }
 
 #define __PROFILE
@@ -56,18 +65,8 @@ inline std::mutex& log_mutex() {
 #endif
 
 
-extern size_t FS_BLOCK_SIZE_ALIGNMENT;
-inline void set_fs_block_alignment(size_t alignment) {
-    FS_BLOCK_SIZE_ALIGNMENT = alignment;
-}
 inline const size_t get_fs_block_alignment() {
-    return FS_BLOCK_SIZE_ALIGNMENT;
-}
-
-extern bool USE_URING;
-inline bool set_io_uring(bool use_uring_flag) {
-    USE_URING = use_uring_flag;
-    return USE_URING;
+    return datastates::FS_BLOCK_SIZE_ALIGNMENT;
 }
 
 inline size_t get_aligned_offset(size_t offset, size_t alignment = get_fs_block_alignment()) {
