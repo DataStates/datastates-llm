@@ -8,7 +8,6 @@ core_impl_t::core_impl_t(size_t host_cache_size, int gpu_id_, int rank_, bool us
     try {
         DBG("DataStates initing: GPU: " << gpu_id << ", host cache (MB): " << (host_cache_size >> 20));
         checkCuda(cudaSetDevice(gpu_id));
-        is_active = true;
         int num_threads = 1;    // For initial prototype, set number of threads=1
         size_t gpu_cache = 1;   // For initial prototype, assume no GPU memory available for checkpointing.
         host_tier = std::make_shared<host_tier_t>(gpu_id, num_threads, host_cache_size, rank, use_io_uring);
@@ -54,6 +53,9 @@ void core_impl_t::ckpt_region(std::shared_ptr<mem_region_t> m) {
         } else if (m->curr_tier_type == HOST_PINNED_TIER || m->curr_tier_type == HOST_UNPINNED_TIER) {
             assert((m->ptr != nullptr) && "Pointer cannot be null for Host tier");
             assert((m->size > 0) && "Size must be greater than zero for Host tier");
+            void *original_ptr = m->ptr;
+            host_tier->mem_pool->allocate(m);
+            std::memcpy(m->ptr, original_ptr, m->size);
             host_tier->flush(m);
         } else {
             FATAL("Checkpointing is not supported on tiers other than GPU, Host unpinned, or Host pinned.");
@@ -72,10 +74,28 @@ void core_impl_t::restore(std::uint64_t version, std::uint64_t uid, const char* 
         }
         DBG("Going to restore from " << path << " tensor of size " << size << " at file offset " << file_offset);
         auto m = std::make_shared<mem_region_t>(version, uid, const_cast<char*>(ptr), size, file_offset, path, HOST_PINNED_TIER);
-        host_tier->fetch(m);
+        restore_region(m);
         return;
     } catch (std::exception &e) {
         FATAL("Exception caught in restore." << e.what());
+    }
+}
+
+void core_impl_t::restore_region(std::shared_ptr<mem_region_t> m) {
+    try {
+        if (m->curr_tier_type == GPU_TIER) {
+            FATAL("Restoring to GPU memory is not yet supported. Please restore to host memory first.");
+        }
+        DBG("Going to restore memory region with UID " << m->uid << " of size " << m->size << " at file offset " << m->file_start_offset);
+        if (m->curr_tier_type == HOST_PINNED_TIER || m->curr_tier_type == HOST_UNPINNED_TIER) {
+            assert((m->ptr != nullptr) && "Pointer cannot be null for Host tier");
+            assert((m->size > 0) && "Size must be greater than zero for Host tier");
+            host_tier->fetch(m);
+        } else {
+            FATAL("Restoring is not supported on tiers other than Host unpinned or Host pinned.");
+        }
+    } catch (std::exception &e) {
+        FATAL("Exception caught in restore_region." << e.what());
     }
 }
 
@@ -100,11 +120,11 @@ std::string core_impl_t::get_queue_stats(bool for_flush_queue) {
 
 std::string core_impl_t::shutdown() {
     try {
-        if (is_active) {
+        if (is_core_engine_active) {
             wait(true);
             gpu_tier.reset();
             host_tier.reset();
-            is_active = false;
+            is_core_engine_active = false;
             perf_profiler_t& perf_profiler = perf_profiler_t::get_instance();
             return perf_profiler.report();
         }

@@ -17,7 +17,6 @@ void state_provider_t::register_state(nb::object d_object) {
         assert((data_object.is_none()) && "State provider has already registered a data_object state");
         is_tensor = nb::isinstance<nb::ndarray<>>(d_object) || nb::cast<bool>(torch.attr("is_tensor")(d_object));
         is_serialized = nb::isinstance<nb::bytes>(d_object) || nb::isinstance<nb::bytearray>(d_object) || nb::isinstance<nb::str>(d_object);
-        
         // Find the raw size of the data object.
         if (is_tensor) {
             assert(d_object.attr("is_contiguous")() && "Tensor must be contiguous");
@@ -31,6 +30,9 @@ void state_provider_t::register_state(nb::object d_object) {
         } else if (is_serialized) {
             data_size = nb::len(d_object);
         } else {
+            FATAL("Only tensors or serialized objects (bytes, bytearray, str) are supported currently to register."
+                  << " Got object of type: " << nb::cast<std::string>(nb::str(d_object.attr("__class__").attr("__name__")))
+                  << " with name " << data_key);
             if (serializer == nullptr) {
                 serializer = new pickle_serializer_t(); // Initialize the default serializer
             }

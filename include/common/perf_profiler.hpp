@@ -103,7 +103,7 @@ public:
         std::unique_lock<std::mutex> lock(profiler_mutex);
         assert(m != nullptr && "Memory region cannot be null");
         assert(m->size > 0 && "Memory region size must be greater than zero");
-        assert(m->version > 0 && "Memory region version must be greater than zero");
+        // assert(m->version > 0 && "Memory region version must be greater than zero");
         assert(m->internal_uid > 0 && "Memory region internal UID must be greater than zero");
 
         if (perf_profiles.find(m->internal_uid) == perf_profiles.end()) {

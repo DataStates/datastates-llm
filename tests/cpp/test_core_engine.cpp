@@ -11,7 +11,7 @@ int main() {
     size_t host_buffer_size = 1ULL<<30; // 1 GB
     int gpu_id = 0; 
     int rank = -1; 
-    datastates::core_t* engine = datastates::dstates_engine(host_buffer_size, gpu_id, rank);
+    datastates::core_t* engine = datastates::create_core_engine(host_buffer_size, gpu_id, rank);
     if (!engine) {
         std::cerr << "Failed to initialize DataStates-LLM core engine." << std::endl;
         return 1;
@@ -64,6 +64,8 @@ int main() {
         std::cerr << "GPU data verification failed: expected sum " << expected_sum << ", got " << gpu_data_on_host_sum << std::endl;
         return -1;
     }
+    std::cout << "Data verification successful after restore " << std::endl;
+    engine->shutdown();
 
     return 0;
 }

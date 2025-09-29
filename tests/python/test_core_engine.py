@@ -1,5 +1,5 @@
 import torch
-from datastates.datastates_core import dstates_engine
+from datastates.datastates_core import create_core_engine 
 import time
 
 def test_ckpt_engine():
@@ -7,7 +7,8 @@ def test_ckpt_engine():
     host_buffer_size = 2 << 30  # 2 GB
     gpu_id = 0
     rank = -1
-    ckpt_engine = dstates_engine(host_buffer_size, gpu_id, rank)
+    use_uring = False
+    ckpt_engine = create_core_engine(host_buffer_size, gpu_id, rank, use_uring)
     device = torch.device("cpu")    
     if torch.cuda.is_available():
         print(f"Found {torch.cuda.device_count()} CUDA devices")
@@ -19,7 +20,7 @@ def test_ckpt_engine():
     tensor2 = torch.randn(tensor_shape, dtype=tensor_dtype).to("cpu")
     tensor_bytes = tensor1.numel()*tensor1.element_size()
 
-    ckpt_path = "/dev/shm/datastates-ckpt.pt"
+    ckpt_path = "/tmp/datastates-ckpt.pt"
 
     file_offset = 0
     version = 1
@@ -40,8 +41,10 @@ def test_ckpt_engine():
     file_offset += tensor_bytes
     ckpt_engine.restore(version, 1, rec_tensor2, tensor_bytes, file_offset, ckpt_path)
     print(f"Loaded checkpoint successfully")
-    print("Original tensor1 sum", torch.sum(tensor1), "Recovered tensor1 sum: ", torch.sum(rec_tensor1))
-    print("Original tensor2 sum", torch.sum(tensor2), "Recovered tensor2 sum: ", torch.sum(rec_tensor2))
+    assert torch.allclose(tensor1.cpu(), rec_tensor1), "Restored tensor1 is not same as original"
+    assert torch.allclose(tensor2.cpu(), rec_tensor2), "Restored tensor2 is not same as original"
+    print(f"Verified restored tensors are same as original")
+    ckpt_engine.shutdown() # or run del ckpt_engine to call destructor before terminating CUDA context.
 
 if __name__ == "__main__":
     test_ckpt_engine()

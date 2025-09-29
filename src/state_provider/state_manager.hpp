@@ -16,7 +16,7 @@ private:
     std::vector<std::shared_ptr<state_provider_t>> providers; // List of registered state providers
     std::map<TIER_TYPES, int> current_provider_index;
     std::set<int> ids; // Set of unique IDs for registered providers
-    size_t file_offset;
+    size_t file_offset = 0;
     int state_provider_uid = 1;
     json state_meta;
 public:

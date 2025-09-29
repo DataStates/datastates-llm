@@ -3,19 +3,13 @@ from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 import time
 from collections import OrderedDict, deque
 import sys
-import os
 from typing import Union
 import pickle
 import json
-import ctypes
 import numpy as np
-from datastates.datastates_core import *
-from .helper import parse_config, get_checkpoint_version, HOST_CACHE_SIZE, CKPT_PARSER_THREADS
+from datastates.datastates_core import create_core_engine
+from .helper import parse_config, get_checkpoint_version, HOST_CACHE_SIZE, CKPT_PARSER_THREADS, SIZE_UINT64, KEY_SEPARATOR, ALIGNMENT
 from .utils import get_logger
-
-SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
-KEY_SEPARATOR = "|"
-ALIGNMENT=4096
 
 class BaseCheckpointEngine:
     def __init__(self, runtime_config={}, rank=0) -> None:
@@ -29,7 +23,7 @@ class BaseCheckpointEngine:
             cuda_device         = int(torch.cuda.current_device())
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
             use_uring = False
-            self.ckpt_engine = dstates_engine(host_cache_size, cuda_device, self.rank, use_uring)
+            self.ckpt_engine = create_core_engine(host_cache_size, cuda_device, self.rank, use_uring)
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.executor_futures = []
 
@@ -86,15 +80,15 @@ class BaseCheckpointEngine:
 
             lean_state_dict = _parse_state("", state_dict)
             lean_state_dict = pickle.dumps(lean_state_dict, protocol=pickle.HIGHEST_PROTOCOL)
-            _end_tensor_offset += len(lean_state_dict)
+            _end_tensor_offset += self.get_aligned_offset(len(lean_state_dict))
             header.update({"datastates_metadata": {"data_offsets": [_start_tensor_offset, _end_tensor_offset]}})
             header = json.dumps(header).encode("utf-8")
             header_size = len(header).to_bytes(SIZE_UINT64, 'little')   # Force the header size to take 8 bytes
-            metadata_size = len(header_size) + len(header)
+            metadata_size = self.get_aligned_offset(len(header_size) + len(header))
             
             # Launch Async copies
             for i, (_, v) in enumerate(async_copies.items()):
-                v["file_offset"] += self.get_aligned_offset(metadata_size)
+                v["file_offset"] += metadata_size
                 tensor_bytes = v["tensor"].numel()*v["tensor"].element_size()
                 # print("Checkpointing now region ", i, " of size ", tensor_bytes, " on path ", path)
                 self.ckpt_engine.ckpt(version, i, v["tensor"], tensor_bytes, v["file_offset"], path)
@@ -102,6 +96,7 @@ class BaseCheckpointEngine:
             with open(path, 'wb') as f:
                 f.seek(0)
                 f.write(header_size)
+                f.seek(self.get_aligned_offset(len(header_size)))
                 f.write(header)
                 # Write the lean state dict towards the end of the file.
                 f.seek(_start_tensor_offset+metadata_size)
@@ -131,8 +126,9 @@ class BaseCheckpointEngine:
             f.seek(0)
             header_size_bytes = f.read(SIZE_UINT64)
             header_size = int.from_bytes(header_size_bytes, 'little')
-            metadata_size = header_size + SIZE_UINT64
+            f.seek(self.get_aligned_offset(SIZE_UINT64))
             header = json.loads(f.read(header_size))
+            metadata_size = self.get_aligned_offset(SIZE_UINT64 + header_size)
             [start_offset, end_offset] = np.add(header["datastates_metadata"]["data_offsets"], metadata_size)
             del(header["datastates_metadata"])
             f.seek(start_offset)
@@ -146,6 +142,8 @@ class BaseCheckpointEngine:
                     if dtype.startswith("torch"):
                         dtype = dtype.replace('torch.', '')
                     shape = v["shape"]
+                    # The offsets stored in the header are relative to the start of the data section.
+                    # We add the total metadata_size to get the absolute file offsets.
                     [start_offset, end_offset] = np.add(v["data_offsets"], metadata_size)
 
                     pre_dest = data
@@ -159,18 +157,15 @@ class BaseCheckpointEngine:
                     if dest != f"TENSOR{KEY_SEPARATOR}{k}":
                         raise Exception(f"[DataStates.llm] The key in header {k} does not match key at location {dest}")
 
-                    # tensor_restored = torch.zeros(size=tuple(shape), dtype=getattr(torch, dtype))
-                    # restore_list.append((version, tensor_restored, start_offset, path))
                     f.seek(start_offset)
                     buffer_size = end_offset - start_offset
-                    buffer = bytearray(buffer_size)  # Preallocate a writable buffer
-                    f.readinto(buffer)  # Read directly into the preallocated buffer
+                    buffer = bytearray(buffer_size)
+                    f.readinto(buffer)
                     tensor_restored = torch.frombuffer(buffer, dtype=getattr(torch, dtype)).reshape(tuple(shape))
                     pre_dest[sub_k] = tensor_restored
-                # self.ckpt_engine.load(restore_list)
             except Exception as exc:
                 raise Exception(f"[DataStates.llm] Got error with tensor loading {dtype}, {shape}, {exc}")
-            # self.logger.info(f"[DataStates.llm] Loaded checkpoint from {path}.")
+
             return data
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] Could not load {path}, exception: {exc}")

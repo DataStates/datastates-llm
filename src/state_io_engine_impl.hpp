@@ -21,10 +21,11 @@ class state_io_engine_impl_t : public state_io_engine_t {
     int rank = -1;
     bool use_io_uring = true;
     size_t fs_block_alignment = 4096;
+    std::vector<void*> persistent_allocs; // Keep allocated buffers alive
 public:
     state_io_engine_impl_t(size_t host_cache_size, int gpu_id, int rank = -1, bool use_io_uring = false, size_t fs_block_alignment = 1);
     void ckpt(std::uint64_t version, state_manager_t* state, std::string path) override;
-    void restore(std::uint64_t version, state_manager_t* state, std::string path) override;
+    std::string restore(std::uint64_t version, std::string path) override;
     void wait(state_manager_t* state, bool persist=false) override;
     std::string get_queue_stats(bool for_flush_queue=true) override;
     std::string shutdown() override;

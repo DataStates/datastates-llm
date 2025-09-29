@@ -1,3 +1,4 @@
+import ctypes
 import sys
 from .deepspeed.helper import parse_ds_config, get_ds_checkpoint_version
 
@@ -10,6 +11,9 @@ FAST_CACHE_INIT_DEFAULT=False
 PIN_HOST_CACHE="pin_host_cache"
 PIN_HOST_CACHE_DEFAULT=True
 SUPPORTED_CONFIG_CLASSES = tuple(["dict", "OrderedDict", "DeepSpeedConfig"])
+SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
+KEY_SEPARATOR = "|"
+ALIGNMENT=4096
 
 # Global variables
 IS_DEEPSPEED_ENABLED = False

@@ -20,6 +20,38 @@ void base_file_handler_t::close_fds_() {
     fifo_fds_.clear();
 }
 
+bool base_file_handler_t::check_odirect_support_(const std::string& path) {
+    if (supports_odirect_ == -1) {
+            // Create a temporary file path in the same directory as the target file.
+        std::filesystem::path p(path);
+        std::string temp_file_path = p.parent_path().string() + "/.odirect_check_datastates_tmp";
+
+        // Open the temp file with O_CREAT to ensure it exists for the check.
+        int test_fd = ::open(temp_file_path.c_str(), O_WRONLY | O_CREAT | O_DIRECT, 0644);
+
+        if (test_fd >= 0) {
+            // Success! The filesystem supports O_DIRECT.
+            supports_odirect_ = 1;
+            ::close(test_fd);
+            ::unlink(temp_file_path.c_str()); // Clean up the temporary file.
+            DBG("[BaseFileHandler] Filesystem supports O_DIRECT.");
+        } else {
+            if (errno == EINVAL) {
+                // This is the expected error on filesystems that don't support O_DIRECT.
+                supports_odirect_ = 0;
+                WARN("[BaseFileHandler] Filesystem does not support O_DIRECT. Tested path: " + path);
+            } else {
+                // Any other error is unexpected. We can warn but shouldn't be fatal.
+                // We'll conservatively assume no support.
+                supports_odirect_ = 0;
+                WARN("[BaseFileHandler] Could not verify O_DIRECT support. Error: " + std::string(strerror(errno)) + ". Disabling O_DIRECT. Tested path: " + path);
+                // We don't need to unlink here because the file was never created.
+            }
+        }
+    }
+    return supports_odirect_ == 1;
+}
+
 int base_file_handler_t::get_fd_(const std::string& path, bool is_odirect) {
     // Create a composite key from the path and the O_DIRECT flag.
     const auto key = std::make_pair(path, is_odirect);
@@ -46,7 +78,7 @@ int base_file_handler_t::get_fd_(const std::string& path, bool is_odirect) {
 
     // Now, it's safe to open the new file.
     int flags = O_WRONLY | O_CREAT;
-    if (is_odirect) {
+    if (is_odirect && check_odirect_support_(path)) {
         flags |= O_DIRECT;
     }
     int fd = ::open(path.c_str(), flags, 0644);

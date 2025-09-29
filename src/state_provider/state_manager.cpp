@@ -152,7 +152,11 @@ size_t state_manager_t::get_file_offset() const {
 
 std::string state_manager_t::get_state_meta() const {
     try {
-        return state_meta.dump();
+        std::string res = state_meta.dump();
+        if (res.size() % get_fs_block_alignment() != 0) {
+            res += std::string(get_fs_block_alignment() - (res.size() % get_fs_block_alignment()), '\0');
+        }
+        return res;
     } catch (std::exception& e) {
         FATAL("Exception caught in get_state_meta: " << e.what());
     }

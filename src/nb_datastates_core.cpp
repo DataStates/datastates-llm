@@ -53,13 +53,15 @@ NB_MODULE(datastates_core, m) {
         .def("wait", &datastates::core_t::wait, "persist"_a = false)
         .def("get_queue_stats", &datastates::core_t::get_queue_stats, "for_flush_queue"_a = true)
         .def("shutdown", &datastates::core_t::shutdown);
-
-    m.def("dstates_engine", &datastates::dstates_engine,
-          nb::rv_policy::take_ownership,
+    
+    // Factory function to create core engine instance (PIMPL)
+    m.def("create_core_engine", &datastates::create_core_engine,
+          nb::rv_policy::reference,
           "host_cache_size"_a, "gpu_id"_a, "rank"_a = -1,
           "use_io_uring"_a = false, "fs_block_alignment"_a = datastates::FS_BLOCK_SIZE_ALIGNMENT,
           "Create a new core engine instance.");
 
+    
     // The following snippets pertain to the VLCC state-management system
     nb::class_<datastates::state_manager_t>(m, "state_manager")
         .def(nb::init<>())
@@ -77,7 +79,7 @@ NB_MODULE(datastates_core, m) {
              "version"_a, "state"_a, "path"_a,
              "Checkpoint a state provider's data.")
         .def("restore", &datastates::state_io_engine_t::restore,
-             "version"_a, "state"_a, "path"_a,
+             "version"_a, "path"_a,
              "Restore a state provider's data from a checkpoint.")
         .def("wait", &datastates::state_io_engine_t::wait,
              "state"_a, "persist"_a = false, "Wait for all operations to complete.")
@@ -86,8 +88,10 @@ NB_MODULE(datastates_core, m) {
         .def("shutdown", &datastates::state_io_engine_t::shutdown,
              "Shutdown the state I/O engine.");
 
-    m.def("create_io_engine", &datastates::create_io_engine,
-          nb::rv_policy::take_ownership,
+    // We need to provide a factory function to create the singleton instance
+    // because state_io_engine_t is an abstract class, and implemented through PIMPL.
+    m.def("create_state_io_engine", &datastates::create_state_io_engine,
+          nb::rv_policy::reference,
           "host_cache_size"_a, "gpu_id"_a, "rank"_a = -1,
           "use_io_uring"_a = false, "fs_block_alignment"_a = datastates::FS_BLOCK_SIZE_ALIGNMENT,
           "Create a new state I/O engine instance.");

@@ -23,9 +23,13 @@ namespace datastates {
         perf_profiler_t& perf_profiler;
         bool is_active = true;
         std::shared_ptr<mem_pool_t> mem_pool;
+        // Filesystems such as /tmp and /dev/shm may not support O_DIRECT.
+        // We optimistically assume that all paths will go to the same filesystem.
+        int supports_odirect_ = -1; // -1: unknown, 0: no, 1: yes
     public:
         base_file_handler_t(std::shared_ptr<mem_pool_t> pool);
         ~base_file_handler_t();
+        bool check_odirect_support_(const std::string& path);
         int get_fd_(const std::string& path, bool is_odirect);
         void close_fds_();
         virtual void write(std::shared_ptr<mem_region_t> m, bool is_odirect=false) = 0;

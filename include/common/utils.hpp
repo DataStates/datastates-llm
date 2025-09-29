@@ -5,6 +5,7 @@
 #include <mutex>
 #include <chrono>
 #include <cassert>
+#include <atomic>
 
 #define checkCuda(ans) { checkCudaFunc((ans), __FILE__, __LINE__); }
 inline void checkCudaFunc(cudaError_t code, const char *file, int line, bool abort=true) {

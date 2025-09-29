@@ -3,23 +3,17 @@ from concurrent.futures import ThreadPoolExecutor, wait, ALL_COMPLETED
 import time
 from collections import OrderedDict, deque
 import sys
-import os
 from typing import Union
 import pickle
 import ctypes
 import numpy as np
-from datastates.datastates_core import *
-from .helper import parse_config, get_checkpoint_version, HOST_CACHE_SIZE, CKPT_PARSER_THREADS
+from datastates.datastates_core import create_state_io_engine, state_manager
+from .helper import parse_config, get_checkpoint_version, HOST_CACHE_SIZE, CKPT_PARSER_THREADS, SIZE_UINT64, KEY_SEPARATOR, ALIGNMENT
 from .utils import get_logger
-import atexit
 import fasteners
 import json
 
-SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
-KEY_SEPARATOR = "|"
-ALIGNMENT = 4096
-
-class CheckpointEngine:
+class StateCheckpointEngine:
     def __init__(self, runtime_config={}, rank=0) -> None:
         try:
             if not torch.cuda.is_available():
@@ -31,7 +25,7 @@ class CheckpointEngine:
             cuda_device         = int(torch.cuda.current_device())
             concurrent_parser_threads = int(datastates_config[CKPT_PARSER_THREADS])
             use_uring = True
-            self.ckpt_engine    = create_io_engine(host_cache_size, cuda_device, self.rank, use_uring)
+            self.ckpt_engine    = create_state_io_engine(host_cache_size, cuda_device, self.rank, use_uring)
             self.executor = ThreadPoolExecutor(max_workers=concurrent_parser_threads)
             self.executor_futures = []
             self.sm = {}
@@ -134,55 +128,45 @@ class CheckpointEngine:
     def load(self, path: str, map_location=None):
         try:
             version = get_checkpoint_version(path, self.last_ckpt_version)
-            f = open(path, 'rb')
-            f.seek(0)
-            try:
-                header_size_bytes = f.read(SIZE_UINT64)
-                header_size = int.from_bytes(header_size_bytes, 'little')
-                metadata_size = header_size + SIZE_UINT64
-                header = json.loads(f.read(header_size))
-            except Exception as exc:
-                raise Exception(f"[DataStates.llm] Could not read header size from {path}, exception: {exc}")
-            
-            [start_offset, end_offset] = np.add(header["datastates_metadata"]["data_offsets"], metadata_size)
-            del(header["datastates_metadata"])
-            f.seek(start_offset)
-            data = pickle.loads(f.read(end_offset-start_offset))
+            header = self.ckpt_engine.load(version, path)
+            header = json.loads(header)
+            state_dict = pickle.loads(header["datastates_metadata"])
+            def _reconstruct_state(key, snapshot):
+                try:
+                    if isinstance(snapshot, str) and snapshot.startswith("TENSOR"):
+                        header_info = header.get(snapshot, None)
+                        assert header_info is not None, f"Key {key} not found in header for {path}"
 
-            try:
-                restore_list = []
-                for k, v in header.items():
-                    split_k = deque(k.split(KEY_SEPARATOR))
-                    dtype = v["dtype"]
-                    if dtype.startswith("torch"):
-                        dtype = dtype.replace('torch.', '')
-                    shape = v["shape"]
-                    [start_offset, end_offset] = np.add(v["data_offsets"], metadata_size)
+                        base_addr = int(header_info["ptr"])
+                        dtype_str = header_info["dtype"].replace("torch.", "")
+                        np_dtype = np.dtype(dtype_str)
 
-                    pre_dest = data
-                    dest = data
-                    while len(split_k):
-                        sub_k = split_k.popleft()
-                        if sub_k.isdigit():
-                            sub_k = int(sub_k) 
-                        pre_dest = dest
-                        dest = dest[sub_k]
-                    if dest != f"TENSOR{KEY_SEPARATOR}{k}":
-                        raise Exception(f"[DataStates.llm] The key in header {k} does not match key at location {dest}")
+                        start, end = header_info["data_offsets"]
+                        tensor_size = end - start
 
-                    # tensor_restored = torch.zeros(size=tuple(shape), dtype=getattr(torch, dtype))
-                    # restore_list.append((version, tensor_restored, start_offset, path))
-                    f.seek(start_offset)
-                    buffer_size = end_offset - start_offset
-                    buffer = bytearray(buffer_size)  # Preallocate a writable buffer
-                    f.readinto(buffer)  # Read directly into the preallocated buffer
-                    tensor_restored = torch.frombuffer(buffer, dtype=getattr(torch, dtype)).reshape(tuple(shape))
-                    pre_dest[sub_k] = tensor_restored
-                # self.ckpt_engine.load(restore_list)
-            except Exception as exc:
-                raise Exception(f"[DataStates.llm] Got error with tensor loading {dtype}, {shape}, {exc}")
-            # self.logger.info(f"[DataStates.llm] Loaded checkpoint from {path}.")
-            return data
+                        tensor_data = np.frombuffer(
+                            (ctypes.c_char * tensor_size).from_address(base_addr),
+                            dtype=np_dtype
+                        )
+                        snapshot = torch.from_numpy(tensor_data).view(header_info["shape"])
+                        if map_location is not None:
+                            snapshot = snapshot.to(map_location)
+                        return snapshot
+
+                    elif isinstance(snapshot, list):
+                        return [
+                            _reconstruct_state(f"{key}{KEY_SEPARATOR}{idx}" if key else str(idx), ele)
+                            for idx, ele in enumerate(snapshot)
+                        ]
+                    elif isinstance(snapshot, (dict, OrderedDict)):
+                        return {
+                            k: _reconstruct_state(f"{key}{KEY_SEPARATOR}{k}" if key else k, v)
+                            for k, v in snapshot.items()
+                        }
+                    return snapshot
+                except Exception as exc:
+                    raise Exception(f"[DataStates.llm][ERROR] Cannot reconstruct {key}, exception: {exc}, snapshot is {snapshot}")
+            return _reconstruct_state("", state_dict)
         except Exception as exc:
             self.logger.error(f"[DataStates.llm][ERROR] Could not load {path}, exception: {exc}")
             sys.exit(-1)
