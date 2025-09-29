@@ -19,8 +19,7 @@ class DeepSpeedConfig:
             self.enabled = True
             self.config = {
                 "host_cache_size": 1,
-                "parser_threads": 2,
-                "pin_host_cache": True
+                "parser_threads": 2
             }
 
 def test_datastates():
@@ -67,7 +66,7 @@ def test_datastates():
     recovered_obj = ckpt_engine.load(path=ckpt_path)
     print("Recovering tensor of sum: ", torch.sum(recovered_obj["tensor1"]), torch.sum(recovered_obj["tensor2"]))
     print(f"Checkpoint recovered successfully (note that sums maybe slightly different due to floating point precision)")
-    del ckpt_engine
+    ckpt_engine.shutdown() # Shutdown the engine to avoid CUDA context being deleted while engine holds GPU resources
     
 if __name__ == "__main__":
     test_datastates()

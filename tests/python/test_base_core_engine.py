@@ -44,7 +44,8 @@ def test_ckpt_engine():
     assert torch.allclose(tensor1.cpu(), rec_tensor1), "Restored tensor1 is not same as original"
     assert torch.allclose(tensor2.cpu(), rec_tensor2), "Restored tensor2 is not same as original"
     print(f"Verified restored tensors are same as original")
-    ckpt_engine.shutdown() # or run del ckpt_engine to call destructor before terminating CUDA context.
+    ckpt_engine.shutdown() # Shutdown the engine to avoid CUDA context being deleted while engine holds GPU resources
+
 
 if __name__ == "__main__":
     test_ckpt_engine()

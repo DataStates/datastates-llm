@@ -42,15 +42,14 @@ def test_state_provider():
     sm.add_var(e_serialized, "foo_e")
     sm.print_state()
 
-    io_engine = create_state_io_engine(host_cache_size=1<<30, gpu_id=0)
+    ckpt_engine = create_state_io_engine(host_cache_size=1<<30, gpu_id=0, rank=0, use_io_uring=True) # 1GB host cache
     path = "/tmp/test_state_0.dstates_ckpt"
-    # path = "/grand/VeloC/am6429/scratch/test_state_0.dstates_ckpt"
-    io_engine.ckpt(0, sm, path)
-    io_engine.wait(sm, persist=True)
+    ckpt_engine.ckpt(0, sm, path)
+    ckpt_engine.wait(sm, persist=True)
     print(f"Checkpointing version 0 now completed.")
 
-    io_engine.wait(sm, persist=True)
-    restored_state = io_engine.restore(0, path)
+    ckpt_engine.wait(sm, persist=True)
+    restored_state = ckpt_engine.restore(0, path)
     restored_state = json.loads(restored_state) # Convert JSON string to dict
     for k, v in restored_state.items():
         start_offset, end_offset = v["offsets"]
@@ -76,7 +75,7 @@ def test_state_provider():
     assert e.get_state() == restored_state["foo_e"].get_state(), "Restored foo_e state is not same as original"
     assert e.get_state_list() == restored_state["foo_e"].get_state_list(), "Restored foo_e state_list is not same as original"
     print("All verification assertions passed. State restored successfully and matches original.")
-    io_engine.shutdown()
+    ckpt_engine.shutdown() # Shutdown the engine to avoid CUDA context being deleted while engine holds GPU resources
 
 if __name__ == "__main__":
     test_state_provider()

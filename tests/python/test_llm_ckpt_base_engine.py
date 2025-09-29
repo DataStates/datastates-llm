@@ -58,7 +58,7 @@ def test_ckpt_base_engine():
     assert np.array_equal(np_array, restored_state["random_np_obj"]), "Restored random_np_obj is not same as original"
     assert "this is a random test string" in restored_state["test_string"], "Restored test_string is not same as original"
     print(f"Verified restored tensors and objects are same as original")
-    ckpt_engine.shutdown()
+    del ckpt_engine # Shutdown the engine to avoid CUDA context being deleted while engine holds GPU resources
 
 if __name__ == "__main__":
     test_ckpt_base_engine()

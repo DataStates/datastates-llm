@@ -53,7 +53,7 @@ class BaseCheckpointEngine:
                         header[key] = {
                             "dtype": str(data.dtype),                       # JSON cannot stringify torch.Size() type
                             "shape": tuple(data.shape),
-                            "data_offsets": [_start_tensor_offset, _end_tensor_offset],
+                            "offsets": [_start_tensor_offset, _end_tensor_offset],
                         }
                         data = data.contiguous()
                         async_copies[key] = {
@@ -81,10 +81,10 @@ class BaseCheckpointEngine:
             lean_state_dict = _parse_state("", state_dict)
             lean_state_dict = pickle.dumps(lean_state_dict, protocol=pickle.HIGHEST_PROTOCOL)
             _end_tensor_offset += self.get_aligned_offset(len(lean_state_dict))
-            header.update({"datastates_metadata": {"data_offsets": [_start_tensor_offset, _end_tensor_offset]}})
+            header.update({"datastates_metadata": {"offsets": [_start_tensor_offset, _end_tensor_offset]}})
             header = json.dumps(header).encode("utf-8")
             header_size = len(header).to_bytes(SIZE_UINT64, 'little')   # Force the header size to take 8 bytes
-            metadata_size = self.get_aligned_offset(len(header_size) + len(header))
+            metadata_size = self.get_aligned_offset(len(header_size)) + self.get_aligned_offset(len(header))
             
             # Launch Async copies
             for i, (_, v) in enumerate(async_copies.items()):
@@ -96,7 +96,7 @@ class BaseCheckpointEngine:
             with open(path, 'wb') as f:
                 f.seek(0)
                 f.write(header_size)
-                f.seek(self.get_aligned_offset(len(header_size)))
+                f.seek(self.get_aligned_offset(SIZE_UINT64))
                 f.write(header)
                 # Write the lean state dict towards the end of the file.
                 f.seek(_start_tensor_offset+metadata_size)
@@ -127,9 +127,10 @@ class BaseCheckpointEngine:
             header_size_bytes = f.read(SIZE_UINT64)
             header_size = int.from_bytes(header_size_bytes, 'little')
             f.seek(self.get_aligned_offset(SIZE_UINT64))
-            header = json.loads(f.read(header_size))
-            metadata_size = self.get_aligned_offset(SIZE_UINT64 + header_size)
-            [start_offset, end_offset] = np.add(header["datastates_metadata"]["data_offsets"], metadata_size)
+            raw_header = f.read(header_size)
+            header = json.loads(raw_header)
+            metadata_size = self.get_aligned_offset(SIZE_UINT64) + self.get_aligned_offset(header_size)
+            [start_offset, end_offset] = np.add(header["datastates_metadata"]["offsets"], metadata_size)
             del(header["datastates_metadata"])
             f.seek(start_offset)
             data = pickle.loads(f.read(end_offset-start_offset))
@@ -144,7 +145,7 @@ class BaseCheckpointEngine:
                     shape = v["shape"]
                     # The offsets stored in the header are relative to the start of the data section.
                     # We add the total metadata_size to get the absolute file offsets.
-                    [start_offset, end_offset] = np.add(v["data_offsets"], metadata_size)
+                    [start_offset, end_offset] = np.add(v["offsets"], metadata_size)
 
                     pre_dest = data
                     dest = data

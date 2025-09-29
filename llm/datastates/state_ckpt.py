@@ -64,15 +64,16 @@ class StateCheckpointEngine:
                         header[key] = {
                             "dtype": str(data.dtype),                       # JSON cannot stringify torch.Size() type
                             "shape": tuple(data.shape),
-                            "data_offsets": [_start_tensor_offset, _end_tensor_offset],
+                            "offsets": [_start_tensor_offset, _end_tensor_offset],
                         }
                         data = data.contiguous()
                         async_copies[key] = {
                             "tensor": data
                         }
                         _start_tensor_offset = _end_tensor_offset
-                        self.sm[version][path].add_var(data, key)
-                        snapshot = f"TENSOR{KEY_SEPARATOR}{key}"
+                        mapped_key = f"TENSOR{KEY_SEPARATOR}{key}"
+                        self.sm[version][path].add_var(data, mapped_key)
+                        snapshot = mapped_key
                     elif isinstance(data, list):
                         snapshot = [None]*len(data)
                         for (idx, ele) in enumerate(data):
@@ -128,27 +129,28 @@ class StateCheckpointEngine:
     def load(self, path: str, map_location=None):
         try:
             version = get_checkpoint_version(path, self.last_ckpt_version)
-            header = self.ckpt_engine.load(version, path)
+            header = self.ckpt_engine.restore(version, path)
             header = json.loads(header)
-            state_dict = pickle.loads(header["datastates_metadata"])
+            lean_state_dict_info = header.get("datastates_metadata", None)
+            assert lean_state_dict_info is not None, f"[DataStates.llm] No metadata found in header for {path}"
+            buffer_size = lean_state_dict_info["size"]
+            buffer_ptr = int(lean_state_dict_info["ptr"])
+            lean_buffer = (ctypes.c_char * buffer_size).from_address(buffer_ptr)
+            state_dict = pickle.loads(lean_buffer)
             def _reconstruct_state(key, snapshot):
                 try:
-                    if isinstance(snapshot, str) and snapshot.startswith("TENSOR"):
+                    if isinstance(snapshot, str) and snapshot.startswith(f"TENSOR{KEY_SEPARATOR}"):
                         header_info = header.get(snapshot, None)
-                        assert header_info is not None, f"Key {key} not found in header for {path}"
-
+                        assert header_info is not None, f"Key {key} not found in header ({header.keys()}) for {path}"
                         base_addr = int(header_info["ptr"])
                         dtype_str = header_info["dtype"].replace("torch.", "")
-                        np_dtype = np.dtype(dtype_str)
-
-                        start, end = header_info["data_offsets"]
+                        start, end = header_info["offsets"]
+                        tensor_shape = tuple(int(dim) for dim in header_info["shape"].strip("torch.Size").strip("()").strip("[]").split(",") if dim)
                         tensor_size = end - start
-
-                        tensor_data = np.frombuffer(
-                            (ctypes.c_char * tensor_size).from_address(base_addr),
-                            dtype=np_dtype
-                        )
-                        snapshot = torch.from_numpy(tensor_data).view(header_info["shape"])
+                        c_buffer = (ctypes.c_char * tensor_size).from_address(base_addr)
+                        torch_dtype = getattr(torch, dtype_str)
+                        element_count = tensor_size // torch_dtype.itemsize
+                        snapshot = torch.frombuffer(c_buffer, dtype=torch_dtype, count=element_count).view(tensor_shape)
                         if map_location is not None:
                             snapshot = snapshot.to(map_location)
                         return snapshot
