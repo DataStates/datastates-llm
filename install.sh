@@ -33,6 +33,7 @@ cmake --install build
 echo "[INFO] C++ core installed to $INSTALL_PATH"
 
 # Step 2: Install Python package for LLMs
+pip install nanobind fasteners
 cd llm
 pip install .
 cd ..

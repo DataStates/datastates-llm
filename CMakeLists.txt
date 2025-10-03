@@ -16,6 +16,7 @@ endif()
 include_directories(
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/src/
+    ${LIBURING_INCLUDE}
 )
 
 file(GLOB_RECURSE CORE_SOURCES

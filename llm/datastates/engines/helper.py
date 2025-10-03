@@ -1,15 +1,13 @@
 import ctypes
 import sys
-from .deepspeed.helper import parse_ds_config, get_ds_checkpoint_version
+from datastates.deepspeed.helper import parse_ds_config, get_ds_checkpoint_version
 
 HOST_CACHE_SIZE="host_cache_size"
-HOST_CACHE_SIZE_DEFAULT=0
-CKPT_PARSER_THREADS="parser_threads"
-CKPT_PARSER_THREADS_DEFAULT=4
-FAST_CACHE_INIT="fast_cache_init"
-FAST_CACHE_INIT_DEFAULT=False
-PIN_HOST_CACHE="pin_host_cache"
-PIN_HOST_CACHE_DEFAULT=True
+HOST_CACHE_SIZE_DEFAULT=1
+ENGINE_TYPE="engine_type"
+ENGINE_TYPE_DEFAULT="state_engine"
+PROFILE_ENGINE="profile_engine"
+PROFILE_ENGINE_DEFAULT=False
 SUPPORTED_CONFIG_CLASSES = tuple(["dict", "OrderedDict", "DeepSpeedConfig"])
 SIZE_UINT64 = ctypes.sizeof(ctypes.c_uint64)
 KEY_SEPARATOR = "|"
@@ -32,11 +30,8 @@ def parse_config(config) -> dict:
     config_class = get_config_type(config)
     result = {
         HOST_CACHE_SIZE: HOST_CACHE_SIZE_DEFAULT,
-        CKPT_PARSER_THREADS: CKPT_PARSER_THREADS_DEFAULT,
-        # In the future, we can give option to do async 
-        # memset and allow unpinned host memory
-        # FAST_CACHE_INIT: FAST_CACHE_INIT_DEFAULT,
-        # PIN_HOST_CACHE: PIN_HOST_CACHE_DEFAULT
+        ENGINE_TYPE: ENGINE_TYPE_DEFAULT,
+        PROFILE_ENGINE: PROFILE_ENGINE_DEFAULT,
     }
     
     if config_class == "DeepSpeedConfig":

@@ -1,2 +1,1 @@
-from .ckpt import BaseCheckpointEngine
-from .state_ckpt import StateCheckpointEngine as CheckpointEngine # Mark this as main checkpointing engine
+from .engines import CheckpointEngine, ENGINE_REGISTRY

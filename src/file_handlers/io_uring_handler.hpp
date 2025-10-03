@@ -18,6 +18,7 @@ class io_uring_handler_t: public base_file_handler_t {
         struct io_chunk_status {
             std::shared_ptr<mem_region_t> mem_region;
             size_t size;
+            int fd = -1;
         };
 
         struct io_uring ring;
@@ -25,6 +26,7 @@ class io_uring_handler_t: public base_file_handler_t {
         std::atomic<size_t> num_completed = 0;
         std::map<uint64_t, io_chunk_status> io_status_map;
         std::map<uint64_t, int> chunk_counter;
+        std::atomic<uint64_t> uring_submission_id_ = 0;
         std::thread io_uring_wait_thread_;
         std::mutex io_uring_wait_mutex_;
         std::condition_variable io_uring_wait_cv_;

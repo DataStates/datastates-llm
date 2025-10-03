@@ -1,5 +1,5 @@
 import time
-from datastates import BaseCheckpointEngine
+from datastates import CheckpointEngine
 import torch
 import numpy as np
 
@@ -17,14 +17,14 @@ def test_ckpt_base_engine():
     print(f"Going to initalize datastates base engine...")
     config = {
         "host_cache_size": 2,  # 2 GB
-        "parser_threads": 1,  # 1 thread (dummy arg for now)
+        "engine_type": "simple_engine"
     }
     device = torch.device("cpu")    
     if torch.cuda.is_available():
         print(f"Found {torch.cuda.device_count()} CUDA devices")
         device = torch.device("cuda:0")
     
-    ckpt_engine = BaseCheckpointEngine(config, rank=0)
+    ckpt_engine = CheckpointEngine(config, rank=0)
     
     tensor_shape = torch.Size([256, 256])
     tensor_dtype = torch.bfloat16

@@ -47,10 +47,10 @@ void io_uring_handler_t::write(std::shared_ptr<mem_region_t> m, bool is_odirect)
                             to_write,
                             m->file_start_offset + total_written);
         total_written += to_write;
-        sqe->user_data = num_submitted + num_ops;
         io_uring_lock_.lock();
+        sqe->user_data = uring_submission_id_++;
         num_ops  += 1;
-        io_status_map[sqe->user_data] = {m, to_write};
+        io_status_map[sqe->user_data] = {m, to_write, fd};
         io_uring_lock_.unlock();
     }
     // Submit all enqueued writes
@@ -72,6 +72,7 @@ void io_uring_handler_t::write(std::shared_ptr<mem_region_t> m, bool is_odirect)
 void io_uring_handler_t::wait_on_io_uring_() {
     try {
         struct io_uring_cqe* cqe; // Batch processing buffer
+        struct io_uring_sqe* sqe;
         std::unique_lock<std::mutex> io_uring_lock_(io_uring_wait_mutex_, std::defer_lock);
         while (true) {
             io_uring_lock_.lock();
@@ -98,8 +99,26 @@ void io_uring_handler_t::wait_on_io_uring_() {
             }
 
             io_chunk_status& info = it->second;
-            if (info.size != static_cast<size_t>(cqe->res)) 
-                FATAL("[io_uring_handler] Incomplete write, got " + std::to_string(cqe->res) + " expected " + std::to_string(info.size));
+            if (info.size < static_cast<size_t>(cqe->res)) 
+                FATAL("[io_uring_handler] Overwrite error, written " + std::to_string(cqe->res) + " expected max " + std::to_string(info.size));
+            
+            if (info.size > static_cast<size_t>(cqe->res)) {
+                size_t written = cqe->res;
+                size_t remaining = info.size - written;
+                off_t new_off = info.mem_region->file_start_offset + (info.size - remaining);
+
+                sqe = io_uring_get_sqe(&ring);
+                io_uring_prep_write(sqe,
+                                    info.fd,
+                                    (char*)info.mem_region->ptr + (info.size - remaining),
+                                    remaining,
+                                    new_off);
+                sqe->user_data = uring_submission_id_++;
+                io_status_map[sqe->user_data] = {info.mem_region, remaining, info.fd};
+                num_submitted += 1;
+                chunk_counter[info.mem_region->internal_uid] += 1;
+                io_uring_submit(&ring);
+            }
 
             io_uring_cqe_seen(&ring, cqe);
             num_completed += 1;

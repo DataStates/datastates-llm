@@ -30,7 +30,7 @@ enum STATE_PROVIDER_CHUNK_STATUS: int {
 };
 
 const size_t STATE_PROVIDER_DEFAULT_CHUNK_SIZE = 64 * (1<<20);
-const size_t MAX_FILE_WRITE_SIZE = (1ULL << 27); // 128 MB
+const size_t MAX_FILE_WRITE_SIZE = (1ULL << 26); // 64 MB
 static constexpr size_t MAX_OPEN_FDS = 2048;
 const size_t MAX_PENDING_FLUSHES_SIZE = (1ULL << 22); // 512 MB
 const size_t WAIT_TIMEOUT_US = 1000*1000;
