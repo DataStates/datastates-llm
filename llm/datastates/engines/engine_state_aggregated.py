@@ -19,6 +19,8 @@ class StateCheckpointEngineAggregated(BaseCheckpointEngine):
             self.ckpt_engine = create_state_io_engine(self.host_cache_size, self.cuda_device, self.rank, self.use_uring)
             self.sm = {}
             self.base_ckpt_path = None
+            self._start_tensor_offset = 0
+            self._end_tensor_offset = 0
 
         except Exception as exc:
             print(f"[DataStates.llm][ERROR] Got exception during DataStates init {exc}")
@@ -33,30 +35,27 @@ class StateCheckpointEngineAggregated(BaseCheckpointEngine):
             if version not in self.sm:
                 self.sm[version] = state_manager()
             if self.base_ckpt_path is None:
-                self.base_ckpt_path = "/".join(path.split("/")[:-2])
+                self.base_ckpt_path = "/".join(path.split("/")[:-1])
             assert path.startswith(self.base_ckpt_path), f"[DataStates.llm] Checkpoint path {path} does not start with base path {self.base_ckpt_path}"
             filename = path.split("/")[-1]
             # assert path not in self.sm[version], f"[DataStates.llm] Path {path} already exists in state manager for version {version}, having keys {self.sm[version].keys()}"
             async_copies = {}
-            _start_tensor_offset = 0
-            _end_tensor_offset = 0
 
             def _parse_state(key, data):
-                nonlocal _start_tensor_offset, _end_tensor_offset
                 try:
                     if torch.is_tensor(data): # and data.device.type == 'cuda':
                         tensor_size = data.numel()*data.element_size()
-                        _end_tensor_offset += tensor_size
+                        self._end_tensor_offset += tensor_size
                         header[key] = {
                             "dtype": str(data.dtype),                       # JSON cannot stringify torch.Size() type
                             "shape": tuple(data.shape),
-                            "offsets": [_start_tensor_offset, _end_tensor_offset],
+                            "offsets": [self._start_tensor_offset, self._end_tensor_offset],
                         }
                         data = data.contiguous()
                         async_copies[key] = {
                             "tensor": data
                         }
-                        _start_tensor_offset = _end_tensor_offset
+                        self._start_tensor_offset = self._end_tensor_offset
                         mapped_key = f"TENSOR{KEY_SEPARATOR}{key}"
                         self.sm[version].add_var(data, f"{mapped_key}{KEY_SEPARATOR}{filename}")
                         snapshot = mapped_key
@@ -82,14 +81,14 @@ class StateCheckpointEngineAggregated(BaseCheckpointEngine):
             t = time.time()
             lean_state_dict = pickle.dumps(lean_state_dict, protocol=pickle.HIGHEST_PROTOCOL)
             profile_log["pickle_time"] = time.time() - t
-            _end_tensor_offset += len(lean_state_dict)
+            self._end_tensor_offset += len(lean_state_dict)
             self.sm[version].add_var(lean_state_dict, f"datastates_metadata{KEY_SEPARATOR}{filename}")
 
             t = time.time()
             profile_log["ckpt_time"] = time.time() - t
             profile_log["path"] = path
             profile_log["version"] = version
-            profile_log["size"] = _end_tensor_offset
+            profile_log["size"] = self._end_tensor_offset
             profile_log["num_tensors"] = len(async_copies)
             if version not in self.profile_logs:
                 self.profile_logs[version] = {}
@@ -149,9 +148,12 @@ class StateCheckpointEngineAggregated(BaseCheckpointEngine):
             sys.exit(-1)
 
     def commit(self, tag):
-        self.ckpt_engine.ckpt(self.last_ckpt_version, self.sm[self.last_ckpt_version], f"{self.base_ckpt_path}/{tag}-aggregated-datastates.ckpt")
+        self.ckpt_engine.ckpt(self.last_ckpt_version, self.sm[self.last_ckpt_version], f"{self.base_ckpt_path}/rank-{self.rank}-aggregated-datastates.ckpt")
         self.logger.info(f"[DataStates.llm] Checkpoint {tag} on rank {self.rank} is ready now!")
         # self.last_ckpt_version += 1
+        self._start_tensor_offset = 0
+        self._end_tensor_offset = 0
+        self.base_ckpt_path = None
         return True
 
     def wait(self, persist=False, for_all=False):
