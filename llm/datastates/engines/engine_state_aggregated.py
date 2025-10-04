@@ -100,6 +100,8 @@ class StateCheckpointEngineAggregated(BaseCheckpointEngine):
             sys.exit(-1)
             
     def load(self, path: str, map_location=None):
+        self.logger.error("[DataStates.llm] Loading API not yet implemented for aggregated checkpointing engine.")
+        sys.exit(-1)
         try:
             version = get_checkpoint_version(path, self.last_ckpt_version)
             header = self.ckpt_engine.restore(version, path)

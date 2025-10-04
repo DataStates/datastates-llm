@@ -15,6 +15,7 @@ class SimpleCheckpointEngine(BaseCheckpointEngine):
         try:
             super().__init__(runtime_config, rank)
             self.use_uring           = False # In simple engine we do not use uring
+            self.profile_engine      = False # In simple engine, we do not have the profiler.
             self.ckpt_engine = create_core_engine(self.host_cache_size, self.cuda_device, self.rank, self.use_uring)
         except Exception as exc:
             print(f"[DataStates.llm][ERROR] Got exception during DataStates init {exc}")

@@ -11,10 +11,10 @@ cd datastates-llm/
 ./install.sh
 
 # Test with a simple PyTorch code, DeepSpeed not required.
-python tests/python/test_ckpt_engine.py   
+python tests/python/test_base_core_engine.py   
 
 # Test with a simple DeepSpeed code.
-python tests/python/test_datastates_llm.py   
+python tests/python/test_llm_ckpt_state_engine.py  
 ```
 ### DataStates Core Engine
 
