@@ -17,7 +17,7 @@ def test_ckpt_state_engine():
     print(f"Going to initalize datastates state engine...")
     config = {
         "host_cache_size": 2,  # 2 GB
-        "parser_threads": 1,  # 1 thread (dummy arg for now)
+        "engine_type": "state_engine"
     }
     device = torch.device("cpu")    
     if torch.cuda.is_available():

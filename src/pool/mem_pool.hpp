@@ -8,6 +8,7 @@
 #include <deque>
 #include <map>
 #include <unordered_set>
+#include <cstring>
 #include "common/defs.hpp"
 #include "common/mem_region.hpp"
 #include "common/utils.hpp"

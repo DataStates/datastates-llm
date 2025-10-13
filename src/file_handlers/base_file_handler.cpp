@@ -77,7 +77,7 @@ int base_file_handler_t::get_fd_(const std::string& path, bool is_odirect) {
     }
 
     // Now, it's safe to open the new file.
-    int flags = O_WRONLY | O_CREAT;
+    int flags = O_RDWR | O_CREAT;
     if (is_odirect && check_odirect_support_(path)) {
         flags |= O_DIRECT;
     }

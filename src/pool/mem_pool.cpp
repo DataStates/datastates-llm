@@ -55,6 +55,9 @@ void mem_pool_t::assign_(std::shared_ptr<mem_region_t> m) {
             FATAL("The pointer " << reinterpret_cast<void*>(m->ptr)
                 << " is not aligned to " << get_fs_block_alignment() << " bytes on tier " << device_type_);
         }
+        if (m->size != m->aligned_size) {
+            std::memset(reinterpret_cast<char*>(m->ptr) + m->size, 0, m->aligned_size - m->size);
+        }
         head_ += m->aligned_size;
         curr_size_ += m->aligned_size;
         alloc_map_[m->internal_uid] = m->aligned_size;
