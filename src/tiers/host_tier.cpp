@@ -114,7 +114,7 @@ void host_tier_t::fetch_io_() {
                 }
                 is_odirect = true;
             }
-            file_handler->read(src);
+            file_handler->read(src, is_odirect);
             fetch_q.pop();
         } catch (const std::exception& ex) {
             FATAL("[HostFetch] Got exception " << ex.what());
