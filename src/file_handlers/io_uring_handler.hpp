@@ -19,6 +19,7 @@ class io_uring_handler_t: public base_file_handler_t {
             std::shared_ptr<mem_region_t> mem_region;
             size_t size;
             int fd = -1;
+            bool is_read = false;
         };
 
         struct io_uring ring;

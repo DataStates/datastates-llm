@@ -50,12 +50,12 @@ void host_tier_t::fetch(std::shared_ptr<mem_region_t> src) {
     assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
     assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only fetch from file to host supported.");
     fetch_q.push(src);
-    fetch_q.wait_for_completion();
 }
 
 void host_tier_t::wait_for_completion() {
     DBG("Going to invoke flush_q.wait_for_completion()");
     flush_q.wait_for_completion();
+    fetch_q.wait_for_completion();
     file_handler->fsync();
 }
 
