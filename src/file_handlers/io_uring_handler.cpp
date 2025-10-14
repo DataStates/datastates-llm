@@ -125,7 +125,7 @@ void io_uring_handler_t::wait_on_io_uring_() {
                                     new_off);
                 }
                 sqe->user_data = uring_submission_id_++;
-                io_status_map[sqe->user_data] = {info.mem_region, remaining, info.fd};
+                io_status_map[sqe->user_data] = {info.mem_region, remaining, info.fd, info.is_read};
                 num_submitted += 1;
                 chunk_counter[info.mem_region->internal_uid] += 1;
                 io_uring_submit(&ring);
