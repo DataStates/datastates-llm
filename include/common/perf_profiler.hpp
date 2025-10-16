@@ -51,7 +51,7 @@ struct profile_info_t {
 
 class perf_profiler_t {
     using clock = std::chrono::high_resolution_clock;
-    using duration = std::chrono::duration<uint64_t, std::nano>;
+    using duration = std::chrono::duration<uint64_t, std::micro>;
     std::unordered_map<std::uint64_t, profile_info_t> perf_profiles;
     std::mutex profiler_mutex;
 
@@ -114,44 +114,19 @@ public:
                         j_report[version] = nlohmann::json{};
                     }
                     if (!j_report[version].contains(path)) {
-                        j_report[version][path] = nlohmann::json{
-                            {"min_gpu_wait_start", std::numeric_limits<std::uint64_t>::max()},
-                            {"max_gpu_wait_end", 0ULL},
-                            {"min_host_wait_start", std::numeric_limits<std::uint64_t>::max()},
-                            {"max_host_wait_end", 0ULL},
-                            {"min_gpu_start", std::numeric_limits<std::uint64_t>::max()},
-                            {"max_gpu_end", 0ULL},
-                            {"min_host_start", std::numeric_limits<std::uint64_t>::max()},
-                            {"max_host_end", 0ULL},
-                            {"total_size", 0ULL}
-                        };
+                        j_report[version][path] = nlohmann::json{};
                     }
-                    // Some datastructures might be on host and might have 0 for GPU times. Avoid updating min/max in such cases.
-                    if (info.gpu_wait_start_time > 0) {
-                        j_report[version][path]["min_gpu_wait_start"] = std::min(j_report[version][path]["min_gpu_wait_start"].get<std::uint64_t>(), info.gpu_wait_start_time);
-                    }
-                    if (info.gpu_wait_end_time > 0) {
-                        j_report[version][path]["max_gpu_wait_end"] = std::max(j_report[version][path]["max_gpu_wait_end"].get<std::uint64_t>(), info.gpu_wait_end_time);
-                    }
-                    if (info.host_wait_start_time > 0) {
-                        j_report[version][path]["min_host_wait_start"] = std::min(j_report[version][path]["min_host_wait_start"].get<std::uint64_t>(), info.host_wait_start_time);
-                    }
-                    if (info.host_wait_end_time > 0) {
-                        j_report[version][path]["max_host_wait_end"] = std::max(j_report[version][path]["max_host_wait_end"].get<std::uint64_t>(), info.host_wait_end_time);
-                    }
-                    if (info.gpu_start_time > 0) {
-                        j_report[version][path]["min_gpu_start"] = std::min(j_report[version][path]["min_gpu_start"].get<std::uint64_t>(), info.gpu_start_time);
-                    }
-                    if (info.gpu_end_time > 0) {
-                        j_report[version][path]["max_gpu_end"] = std::max(j_report[version][path]["max_gpu_end"].get<std::uint64_t>(), info.gpu_end_time);
-                    }
-                    if (info.host_start_time > 0) {
-                        j_report[version][path]["min_host_start"] = std::min(j_report[version][path]["min_host_start"].get<std::uint64_t>(), info.host_start_time);
-                    }
-                    if (info.host_end_time > 0) {
-                        j_report[version][path]["max_host_end"] = std::max(j_report[version][path]["max_host_end"].get<std::uint64_t>(), info.host_end_time);
-                    }
-                    j_report[version][path]["total_size"] = j_report[version][path]["total_size"].get<std::uint64_t>() + info.size;
+                    std::string internal_uid_str = std::to_string(info.internal_uid);
+                    j_report[version][path][internal_uid_str] = nlohmann::json{};
+                    j_report[version][path][internal_uid_str]["gpu_wait_start_time"] = info.gpu_wait_start_time;
+                    j_report[version][path][internal_uid_str]["gpu_wait_end_time"] = info.gpu_wait_end_time;
+                    j_report[version][path][internal_uid_str]["host_wait_start_time"] = info.host_wait_start_time;
+                    j_report[version][path][internal_uid_str]["host_wait_end_time"] = info.host_wait_end_time;
+                    j_report[version][path][internal_uid_str]["gpu_start_time"] = info.gpu_start_time;
+                    j_report[version][path][internal_uid_str]["gpu_end_time"] = info.gpu_end_time;
+                    j_report[version][path][internal_uid_str]["host_start_time"] = info.host_start_time;
+                    j_report[version][path][internal_uid_str]["host_end_time"] = info.host_end_time;
+                    j_report[version][path][internal_uid_str]["size"] = info.size;
                 } catch (const std::exception& e) {
                     FATAL("Error reporting performance for UID " << uid << ": " << e.what());
                 }
