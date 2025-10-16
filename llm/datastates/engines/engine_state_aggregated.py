@@ -86,8 +86,6 @@ class StateCheckpointEngineAggregated(BaseCheckpointEngine):
 
             t = time.time()
             profile_log["ckpt_time"] = time.time() - t
-            profile_log["path"] = path
-            profile_log["version"] = version
             profile_log["size"] = self._end_tensor_offset
             profile_log["num_tensors"] = len(async_copies)
             if version not in self.profile_logs:
@@ -126,7 +124,12 @@ class StateCheckpointEngineAggregated(BaseCheckpointEngine):
                         element_count = tensor_size // torch_dtype.itemsize
                         snapshot = torch.frombuffer(c_buffer, dtype=torch_dtype, count=element_count).view(tensor_shape)
                         if map_location is not None:
-                            snapshot = snapshot.to(map_location)
+                            if callable(map_location):
+                                # Emulate torch.load(map_location) behavior
+                                device = map_location(None, snapshot.device)
+                                snapshot = snapshot.to(device)
+                            else:
+                                snapshot = snapshot.to(map_location)
                         return snapshot
 
                     elif isinstance(snapshot, list):

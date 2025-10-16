@@ -70,6 +70,7 @@ std::string state_io_engine_impl_t::restore(std::uint64_t version, std::string p
             char *tmp_ptr = reinterpret_cast<char*>(&tmp);
             auto m_header_offset = std::make_shared<mem_region_t>(version, 0 /*region_id*/, tmp_ptr, sizeof(size_t), 0 /*file_offset*/, path, HOST_UNPINNED_TIER);
             core_engine->restore_region(m_header_offset);
+            core_engine->wait(true /*persist*/);
             header_begin_offset = tmp;
         }
 
@@ -91,6 +92,7 @@ std::string state_io_engine_impl_t::restore(std::uint64_t version, std::string p
         {
             auto m_header = std::make_shared<mem_region_t>(version, 0 /*region_id*/, header_buf.data(), header_size, header_begin_offset, path, HOST_UNPINNED_TIER);
             core_engine->restore_region(m_header);
+            core_engine->wait(true /*persist*/);
         }
 
         // Strip trailing null padding (get_state_meta pads with '\0')
@@ -135,7 +137,7 @@ std::string state_io_engine_impl_t::restore(std::uint64_t version, std::string p
 
             // Allocate aligned host buffer (aligned to fs_block_alignment)
             void* buf = nullptr;
-            int rc = posix_memalign(&buf, fs_block_alignment, data_size);
+            int rc = posix_memalign(&buf, get_fs_block_alignment(), data_size);
             if (rc != 0 || buf == nullptr) {
                 FATAL("[state_io_engine_impl] posix_memalign failed for key " << key << " rc=" << rc);
             }
@@ -152,7 +154,9 @@ std::string state_io_engine_impl_t::restore(std::uint64_t version, std::string p
                                                    start /*file_offset*/,
                                                    path,
                                                    HOST_UNPINNED_TIER);
-
+            if (data_size > get_fs_block_alignment() && is_aligned(start)) {
+                m->aligned_size = m->size;
+            }
             DBG("[state_io_engine_impl] Restoring key=" << key << " size=" << data_size << " offset=" << start << " -> buf=" << buf);
             core_engine->restore_region(m);
 
@@ -172,6 +176,7 @@ std::string state_io_engine_impl_t::restore(std::uint64_t version, std::string p
 
             out_json[key] = std::move(entry);
         }
+        core_engine->wait(true /*persist*/);
         return out_json.dump();
     } catch (std::exception &e) {
         FATAL("Exception caught in restore: " << e.what());

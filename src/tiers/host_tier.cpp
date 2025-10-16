@@ -50,12 +50,12 @@ void host_tier_t::fetch(std::shared_ptr<mem_region_t> src) {
     assert((successor_tier_ != nullptr) && "[HOST_TIER] Successor tier is not set.");
     assert((successor_tier_->tier_type_ == FILE_TIER) && "[HOST_TIER] Only fetch from file to host supported.");
     fetch_q.push(src);
-    fetch_q.wait_for_completion();
 }
 
 void host_tier_t::wait_for_completion() {
     DBG("Going to invoke flush_q.wait_for_completion()");
     flush_q.wait_for_completion();
+    fetch_q.wait_for_completion();
     file_handler->fsync();
 }
 
@@ -100,15 +100,21 @@ void host_tier_t::fetch_io_() {
             if (res == false || is_active == false)
                 return;
             auto src = fetch_q.get_front();
-            DBG("Starting to fetch in background thread right now " << src->path << " from offset " << src->file_start_offset << " of size " << src->size);
             assert((src->ptr != nullptr) && "[HOST_TIER] Memory not allocated for fetching.");
-                    
-            std::ifstream f;            
-            f.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-            f.open(src->path, std::ios::in | std::ios::binary);
-            f.seekg(src->file_start_offset);
-            f.read(const_cast<char*>(src->ptr), src->size);
-            f.close();
+            bool is_odirect = false;
+            if (src->aligned_size > 0 &&
+                src->aligned_size % get_fs_block_alignment() == 0 &&
+                src->size >= get_fs_block_alignment() &&
+                get_fs_block_alignment() > 1) {
+                if (!is_aligned(reinterpret_cast<uintptr_t>(src->ptr))) {
+                    FATAL("[HOST_TIER][io_uring] Pointer not aligned to fs block size");
+                }
+                if (!is_aligned(src->file_start_offset)) {
+                    FATAL("[HOST_TIER][io_uring] Offset not aligned to fs block size");
+                }
+                is_odirect = true;
+            }
+            file_handler->read(src, is_odirect);
             fetch_q.pop();
         } catch (const std::exception& ex) {
             FATAL("[HostFetch] Got exception " << ex.what());

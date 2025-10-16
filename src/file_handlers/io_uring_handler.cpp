@@ -50,7 +50,7 @@ void io_uring_handler_t::write(std::shared_ptr<mem_region_t> m, bool is_odirect)
         io_uring_lock_.lock();
         sqe->user_data = uring_submission_id_++;
         num_ops  += 1;
-        io_status_map[sqe->user_data] = {m, to_write, fd};
+        io_status_map[sqe->user_data] = {m, to_write, fd, false};
         io_uring_lock_.unlock();
     }
     // Submit all enqueued writes
@@ -103,18 +103,29 @@ void io_uring_handler_t::wait_on_io_uring_() {
                 FATAL("[io_uring_handler] Overwrite error, written " + std::to_string(cqe->res) + " expected max " + std::to_string(info.size));
             
             if (info.size > static_cast<size_t>(cqe->res)) {
-                size_t written = cqe->res;
-                size_t remaining = info.size - written;
+                size_t completed_part = cqe->res;
+                size_t remaining = info.size - completed_part;
                 off_t new_off = info.mem_region->file_start_offset + (info.size - remaining);
 
                 sqe = io_uring_get_sqe(&ring);
-                io_uring_prep_write(sqe,
+                if (!sqe) {
+                    FATAL("[io_uring] Failed to get SQE for remaining read/write");
+                }
+                if (info.is_read) {
+                    io_uring_prep_read(sqe,
                                     info.fd,
                                     (char*)info.mem_region->ptr + (info.size - remaining),
                                     remaining,
                                     new_off);
+                } else {
+                    io_uring_prep_write(sqe,
+                                    info.fd,
+                                    (char*)info.mem_region->ptr + (info.size - remaining),
+                                    remaining,
+                                    new_off);
+                }
                 sqe->user_data = uring_submission_id_++;
-                io_status_map[sqe->user_data] = {info.mem_region, remaining, info.fd};
+                io_status_map[sqe->user_data] = {info.mem_region, remaining, info.fd, info.is_read};
                 num_submitted += 1;
                 chunk_counter[info.mem_region->internal_uid] += 1;
                 io_uring_submit(&ring);
@@ -141,7 +152,7 @@ void io_uring_handler_t::read(std::shared_ptr<mem_region_t> m, bool is_odirect) 
     int fd = get_fd_(m->path, is_odirect);
     size_t file_size = m->aligned_size > 0 ? m->aligned_size : m->size;
     size_t total_read = 0;
-
+    std::unique_lock<std::mutex> io_uring_lock_(io_uring_wait_mutex_, std::defer_lock);
     while (total_read < file_size) {
         size_t remaining = file_size - total_read;
         size_t to_read = std::min(remaining, MAX_FILE_WRITE_SIZE);
@@ -156,17 +167,18 @@ void io_uring_handler_t::read(std::shared_ptr<mem_region_t> m, bool is_odirect) 
                            to_read,
                            m->file_start_offset + total_read);
         total_read += to_read;
-        sqe->user_data = 0;
+        io_uring_lock_.lock();
+        sqe->user_data = uring_submission_id_++;
+        io_status_map[sqe->user_data] = {m, to_read, fd, true};
         num_submitted++;
+        io_uring_lock_.unlock();
     }
     int ret = io_uring_submit(&ring);
     if (ret < 0) {
         FATAL("[io_uring] io_uring_submit failed: " +
               std::string(strerror(-ret)));
     }
-    // We can wait for all reads to complete here since we don't use the buffer until the read is done
-    // This can be optimized later to overlap reads with computation if needed
-    fsync();
+    io_uring_wait_cv_.notify_all();
 }
 
 void io_uring_handler_t::fsync() {
