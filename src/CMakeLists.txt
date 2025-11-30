@@ -1,7 +1,6 @@
 find_package(CUDAToolkit REQUIRED)
 
 # Find liburing
-
 set(LIBURING_ROOT "" CACHE PATH "Optional root directory of the liburing installation (contains include/ and lib/).")
 
 find_package(PkgConfig QUIET)
@@ -14,8 +13,11 @@ if(LIBURING_ROOT)
     list(APPEND _liburing_hint_paths "${LIBURING_ROOT}")
 endif()
 
-if(DEFINED ENV{LIBURING_PATH})
-    list(APPEND _liburing_hint_paths "$ENV{LIBURING_PATH}")
+if(NOT LIBURING_ROOT AND DEFINED ENV{LIBURING_ROOT})
+    set(LIBURING_ROOT "$ENV{LIBURING_ROOT}")
+endif()
+if(LIBURING_ROOT)
+    list(APPEND _liburing_hint_paths "${LIBURING_ROOT}")
 endif()
 
 if(LIBURING_PKG_FOUND)
@@ -39,7 +41,7 @@ find_library(LIBURING_LIBRARY
 if(NOT LIBURING_INCLUDE_DIR OR NOT LIBURING_LIBRARY)
     message(FATAL_ERROR
         "Could not locate liburing. "
-        "Set LIBURING_ROOT or LIBURING_PATH to the liburing prefix (containing include/ and lib/)."
+        "Set env variable LIBURING_ROOT to the liburing prefix (containing include/ and lib/)."
     )
 endif()
 
@@ -52,11 +54,14 @@ set_target_properties(liburing::liburing PROPERTIES
 mark_as_advanced(LIBURING_ROOT LIBURING_INCLUDE_DIR LIBURING_LIBRARY)
 
 # Build datastates_core library
-file(GLOB_RECURSE CORE_SOURCES
-    ${PROJECT_SOURCE_DIR}/src/pool/*.cpp
-    ${PROJECT_SOURCE_DIR}/src/tiers/*.cpp
-    ${PROJECT_SOURCE_DIR}/src/serializers/*.cpp
-    ${PROJECT_SOURCE_DIR}/src/file_handlers/*.cpp
+set(CORE_SOURCES
+    ${PROJECT_SOURCE_DIR}/src/pool/mem_pool.cpp
+    ${PROJECT_SOURCE_DIR}/src/tiers/gpu_tier.cpp
+    ${PROJECT_SOURCE_DIR}/src/tiers/host_tier.cpp
+    ${PROJECT_SOURCE_DIR}/src/tiers/file_tier.cpp
+    ${PROJECT_SOURCE_DIR}/src/file_handlers/pwrite_handler.cpp
+    ${PROJECT_SOURCE_DIR}/src/file_handlers/io_uring_handler.cpp
+    ${PROJECT_SOURCE_DIR}/src/file_handlers/base_file_handler.cpp
     ${PROJECT_SOURCE_DIR}/src/core_impl.cpp
     ${PROJECT_SOURCE_DIR}/src/datastates.cpp
 )

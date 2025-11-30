@@ -1,11 +1,12 @@
 find_package(Python 3.8 COMPONENTS Interpreter Development REQUIRED)
 find_package(nanobind CONFIG REQUIRED HINTS ${Python_SITELIB}/nanobind)
 
-file(GLOB_RECURSE NB_SOURCES
+set(NB_SOURCES
     ${PROJECT_SOURCE_DIR}/python/nb_datastates_core.cpp
     ${PROJECT_SOURCE_DIR}/python/state_io_engine.cpp
     ${PROJECT_SOURCE_DIR}/python/state_io_engine_impl.cpp
-    ${PROJECT_SOURCE_DIR}/python/state_provider/*.cpp
+    ${PROJECT_SOURCE_DIR}/python/state_provider/state_manager.cpp
+    ${PROJECT_SOURCE_DIR}/python/state_provider/state_provider.cpp
 )
 
 nanobind_add_module(datastates_core_py MODULE ${NB_SOURCES})
